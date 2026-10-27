@@ -90,7 +90,7 @@ export function LogPanel({ scanId, saved = [], onEvent }) {
   }
 
   return (
-    <details className="mt-4 rounded-lg border bg-surface p-3">
+    <details id="engine-log" className="rounded-lg border bg-surface p-3">
       <summary className="min-h-10 cursor-pointer text-sm font-semibold">Engine log</summary>
       <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Filter log">
         {FILTERS.map((stage) => (

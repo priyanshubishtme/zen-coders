@@ -367,8 +367,8 @@ The plug-in point and the contract change for each item are also in [`docs/09-ro
 The workbench is the default results view. It does not change detection or repairs.
 
 - Screenshots are a viewport JPEG (1280×720 by default, quality 60, max 500 KB). The before shot is taken at the end of the scan. The after shot is taken from the patched HTML after Apply, in a new browser context, same viewport. Bytes live in the one-hour memory source cache, not in MongoDB. The scan record stores only `shots.before` / `shots.after`, `viewport`, and `marks`.
-- Pins are fractions of that viewport. `GET /scans/:id` still returns the score and issues. `GET /scans/:id/events` streams the log and the finished list is saved on the scan. `GET /scans/:id/source` returns the original HTML as `text/plain`.
-- Color filters and the name list explain the screenshot. They are not a second detector. A keyboard walk, when the scan recorded one, is listed with a confidence. It is not an axe violation. An empty list still says focus order was not captured.
+- Marks are fractions of that viewport: a box around the element and a numbered badge outside it. `GET /scans/:id` still returns the score and issues. `GET /scans/:id/events` streams the log and the finished list is saved on the scan. `GET /scans/:id/source` returns the original HTML as `text/plain`.
+- Color filters and the name table explain the screenshot. They are not a second detector. A keyboard walk, when the scan recorded one, is listed with a confidence and with “1 control was” or “2 controls were”. It is not an axe violation. An empty list still says focus order was not captured. On a wide screen the preview and the issues sit side by side.
 - Monaco (`@monaco-editor/react`) loads only after “Show original and patched code”, from the editor’s CDN. The landing page does not load it.
 
 Still open, and not part of Phase A: a shorter landing page, denser issue rows, and rewriting a preview copy with `data-afx-mark` (we used a screenshot and pins instead of injecting marks into the customer’s HTML).

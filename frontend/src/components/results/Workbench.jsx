@@ -1,67 +1,39 @@
-import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { screenshotUrl } from '@/lib/api.js';
-import { LogPanel } from './LogPanel.jsx';
-import { Pins } from './Pins.jsx';
-import { Simulators } from './Simulators.jsx';
+import { buildPreviewModel, MARK_GLYPH, oneLine } from '@/lib/markLayout.js';
+import { severityOf } from '@/lib/severity.js';
+import { MarkLegend, Marks } from './Marks.jsx';
 
 const CodePane = lazy(() => import('./CodePane.jsx').then((mod) => ({ default: mod.CodePane })));
 
-function prefersStill() {
-  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-}
-
 /**
- * Screenshot, pins, before/after, log, and simulators for one finished scan.
+ * Screenshot, boxes, and the before/after comparison.
  * @param {{ scan: import('@/lib/api.js').Scan,
- *   verification: { patchedHtml?: string } | null,
- *   activeId: string | null, onSelect: (id: string) => void }} props
+ *   highlightIds?: string[], onSelect: (id: string) => void, filter?: string | null }} props
  */
-export function Workbench({ scan, verification, activeId, onSelect }) {
-  const still = prefersStill();
-  const [layout, setLayout] = useState(still ? 'side' : 'side');
+export function Workbench({ scan, highlightIds = [], onSelect, filter = null }) {
+  const [layout, setLayout] = useState('side');
   const [split, setSplit] = useState(50);
   const [broken, setBroken] = useState({ before: false, after: false });
-  const [showCode, setShowCode] = useState(false);
-  const [filter, setFilter] = useState(null);
-  const [afterLive, setAfterLive] = useState(false);
-  const onFilter = useCallback((next) => setFilter(next), []);
-  const onLog = useCallback((event) => {
-    if (event.stage === 'screenshot' && event.message.startsWith('After screenshot captured')) {
-      setAfterLive(true);
-    }
-  }, []);
+  const [showMarks, setShowMarks] = useState(true);
 
-  const titles = useMemo(() => {
-    const map = {};
-    for (const item of [...(scan.violations ?? []), ...(scan.advisory ?? []), ...(scan.manualReview ?? [])]) {
-      map[item.id] = item.title;
-    }
-    return map;
-  }, [scan]);
+  const model = useMemo(
+    () => buildPreviewModel(scan.violations ?? [], scan.manualReview ?? [], scan.marks ?? []),
+    [scan],
+  );
 
-  const pins = (scan.marks ?? []).filter((mark) => mark.place === 'pin' && mark.n != null);
   const beforeSrc = screenshotUrl(scan.id, 'before');
   const afterSrc = screenshotUrl(scan.id, 'after');
-  const afterFromLog = (scan.events ?? []).some(
-    (event) => event.stage === 'screenshot' && event.message.startsWith('After screenshot captured'),
-  );
   const showBefore = Boolean(scan.shots?.before) && !broken.before;
-  const hasAfter = (Boolean(scan.shots?.after) || afterLive || afterFromLog) && !broken.after;
-
-  function focusIssue(id) {
-    onSelect(id);
-    const row = document.getElementById(`issue-${id}`);
-    row?.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
-    row?.focus();
-  }
+  const hasAfter = Boolean(scan.shots?.after) && !broken.after;
 
   return (
-    <section aria-labelledby="workbench-heading" className="mt-6 rounded-lg border bg-background p-4">
+    <section id="preview" aria-labelledby="workbench-heading" className="rounded-lg border bg-background p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="workbench-heading" className="text-lg font-semibold">
           Page preview
         </h2>
-        <div role="group" aria-label="Preview layout" className="flex rounded-md border">
+        <div role="group" aria-label="Compare before and after" className="flex rounded-md border">
           {[
             ['side', 'Side by side'],
             ['slider', 'Slider'],
@@ -70,6 +42,7 @@ export function Workbench({ scan, verification, activeId, onSelect }) {
               key={id}
               type="button"
               aria-pressed={layout === id}
+              disabled={!hasAfter && id === 'slider'}
               className={`min-h-10 px-3 text-sm ${
                 layout === id ? 'bg-primary text-primary-foreground' : 'text-foreground'
               }`}
@@ -81,12 +54,25 @@ export function Workbench({ scan, verification, activeId, onSelect }) {
         </div>
       </div>
 
+      <WholePage chips={model.chips} highlightIds={highlightIds} onSelect={onSelect} />
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <button
+          type="button"
+          className="min-h-10 rounded-md border px-3 text-sm"
+          aria-pressed={showMarks}
+          onClick={() => setShowMarks((value) => !value)}
+        >
+          {showMarks ? 'Hide marks' : 'Show marks'}
+        </button>
+      </div>
+      <MarkLegend />
+
       {!showBefore ? (
         <p className="mt-3 text-sm text-muted-foreground">
           No screenshot for this scan. The issue list below still works.
         </p>
       ) : layout === 'slider' && hasAfter ? (
-        <div className="relative mt-3 aspect-video overflow-hidden rounded-md border bg-surface">
+        <div className="relative mt-3 aspect-video rounded-md border bg-surface">
           <img
             src={beforeSrc}
             alt="Page before fixes"
@@ -99,12 +85,9 @@ export function Workbench({ scan, verification, activeId, onSelect }) {
             alt=""
             aria-hidden="true"
             className="absolute inset-0 h-full w-full object-contain"
-            style={{
-              clipPath: `inset(0 ${100 - split}% 0 0)`,
-              ...(filter ? { filter } : {}),
-            }}
+            style={{ clipPath: `inset(0 ${100 - split}% 0 0)`, ...(filter ? { filter } : {}) }}
           />
-          <Pins marks={pins} titles={titles} activeId={activeId} onSelect={focusIssue} />
+          <Marks items={model.boxes} highlightIds={highlightIds} onSelect={onSelect} hidden={!showMarks} />
         </div>
       ) : (
         <div className={`mt-3 grid gap-3 ${layout === 'side' && hasAfter ? 'md:grid-cols-2' : ''}`}>
@@ -112,14 +95,19 @@ export function Workbench({ scan, verification, activeId, onSelect }) {
             src={beforeSrc}
             alt="Page before fixes"
             filter={filter}
-            pins={pins}
-            titles={titles}
-            activeId={activeId}
-            onSelect={focusIssue}
+            items={model.boxes}
+            highlightIds={highlightIds}
+            onSelect={onSelect}
+            hidden={!showMarks}
             onError={() => setBroken((m) => ({ ...m, before: true }))}
           />
           {hasAfter && (
-            <Shot src={afterSrc} alt="Page after verified fixes" filter={filter} onError={() => setBroken((m) => ({ ...m, after: true }))} />
+            <Shot
+              src={afterSrc}
+              alt="Page after verified fixes"
+              filter={filter}
+              onError={() => setBroken((m) => ({ ...m, after: true }))}
+            />
           )}
         </div>
       )}
@@ -139,44 +127,78 @@ export function Workbench({ scan, verification, activeId, onSelect }) {
         </label>
       )}
       {!hasAfter && showBefore && (
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="mt-2 max-w-[65ch] text-sm text-muted-foreground">
           The after image appears once verified fixes are applied.
         </p>
       )}
-
-      <Simulators marks={scan.marks ?? []} keyboard={scan.keyboard ?? []} onFilter={onFilter} />
-      <LogPanel key={scan.id} scanId={scan.id} saved={scan.events ?? []} onEvent={onLog} />
-
-      <div className="mt-4">
-        <button
-          type="button"
-          className="min-h-10 rounded-md border px-3 text-sm"
-          aria-expanded={showCode}
-          onClick={() => setShowCode(true)}
-        >
-          Show original and patched code
-        </button>
-        {showCode && (
-          <Suspense fallback={<p className="mt-3 text-sm">Loading the editor…</p>}>
-            <CodePane scanId={scan.id} patchedHtml={verification?.patchedHtml ?? null} />
-          </Suspense>
-        )}
-      </div>
     </section>
   );
 }
 
-function Shot({ src, alt, filter, pins = [], titles = {}, activeId = null, onSelect = () => {}, onError }) {
+function WholePage({ chips, highlightIds, onSelect }) {
+  if (chips.length === 0) return null;
   return (
-    <div className="relative aspect-video overflow-hidden rounded-md border bg-surface">
-      <img
-        src={src}
-        alt={alt}
-        className="h-full w-full object-contain"
-        style={filter ? { filter } : undefined}
-        onError={onError}
-      />
-      <Pins marks={pins} titles={titles} activeId={activeId} onSelect={onSelect} />
+    <div className="mt-3">
+      <h3 className="text-sm font-semibold">Whole page</h3>
+      <ul className="mt-2 flex flex-wrap gap-2">
+        {chips.map((chip) => {
+          const severity = chip.manual ? 'check by hand' : severityOf(chip.violation.impact).label.toLowerCase();
+          const glyph = chip.manual ? MARK_GLYPH.manual : MARK_GLYPH[chip.violation.impact] ?? MARK_GLYPH.moderate;
+          const reason = chip.manual ? oneLine(chip.violation.explanation) : oneLine(chip.violation.title);
+          const active = highlightIds.includes(chip.violation.id);
+          return (
+            <li key={chip.violation.id}>
+              <button
+                type="button"
+                aria-current={active ? 'true' : undefined}
+                aria-label={`Issue ${chip.n}, ${severity}: ${chip.manual ? `Check by hand. ${reason}` : reason}`}
+                className={`inline-flex min-h-10 max-w-full items-center gap-2 rounded-md border px-2 text-left text-sm ${
+                  chip.manual ? 'border-dashed' : ''
+                } ${active ? 'ring-2 ring-foreground' : ''}`}
+                onClick={() => onSelect(chip.violation.id)}
+              >
+                <span className="font-semibold tabular-nums" aria-hidden="true">
+                  {glyph}
+                  {chip.n}
+                </span>
+                <span className="truncate">{chip.manual ? `Check by hand. ${reason}` : reason}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function Shot({ src, alt, filter, items = [], highlightIds = [], onSelect = () => {}, hidden = false, onError }) {
+  return (
+    <div className="relative aspect-video rounded-md border bg-surface">
+      <img src={src} alt={alt} className="h-full w-full object-contain" style={filter ? { filter } : undefined} onError={onError} />
+      <Marks items={items} highlightIds={highlightIds} onSelect={onSelect} hidden={hidden} />
+    </div>
+  );
+}
+
+/** Code stays collapsed until the reader asks for it. Monaco loads on that click. */
+export function CodeDisclosure({ scanId, patchedHtml }) {
+  const [showCode, setShowCode] = useState(false);
+  return (
+    <div id="code" className="rounded-lg border bg-background p-4">
+      <h2 className="text-lg font-semibold">Code</h2>
+      <button
+        type="button"
+        className="mt-2 min-h-10 rounded-md border px-3 text-sm"
+        aria-expanded={showCode}
+        onClick={() => setShowCode(true)}
+      >
+        Show original and patched code
+      </button>
+      {showCode && (
+        <Suspense fallback={<p className="mt-3 text-sm">Loading the editor…</p>}>
+          <CodePane scanId={scanId} patchedHtml={patchedHtml ?? null} />
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { ExternalLink, Eye, Sparkles, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
+import { fixStatus, oneLine } from '@/lib/markLayout.js';
 import { severityOf } from '@/lib/severity.js';
 import { RepairCard } from './RepairCard.jsx';
 
@@ -54,7 +55,10 @@ export function WcagChips({ refs }) {
  *   acceptedIds?: Set<string>, onAccept?: (id: string) => void, onReject?: (id: string) => void,
  *   onFix?: (violationIds: string[]) => void, fixing?: boolean,
  *   marksById?: Record<string, { n: number | null, place: string }>,
- *   activeId?: string | null, onSelect?: (id: string) => void }} props
+ *   numberById?: Record<string, number>,
+ *   highlightIds?: string[],
+ *   activeId?: string | null, onSelect?: (id: string) => void,
+ *   onSelectGroup?: (ids: string[]) => void }} props
  */
 export function IssueGroup({
   group,
@@ -68,44 +72,47 @@ export function IssueGroup({
   onFix,
   fixing = false,
   marksById = {},
+  numberById = {},
+  highlightIds = [],
   activeId = null,
   onSelect,
+  onSelectGroup,
 }) {
   const { first, items } = group;
   const n = items.length;
   const hasRepairs = items.some((v) => repairsByViolation[v.id]);
-  const highlighted = items.some((v) => v.id === activeId);
+  const highlighted = items.some((v) => highlightIds.includes(v.id) || v.id === activeId);
+  const numbers = items.map((v) => numberById[v.id]).filter((n) => n != null);
   const elements = (
     <ul className="mt-2 space-y-3">
       {items.map((v) => {
-        const repair = repairsByViolation[v.id];
         const mark = marksById[v.id];
         return (
           <li
             key={v.id}
             id={`issue-${v.id}`}
             tabIndex={-1}
-            className={`rounded-md bg-surface p-3 ${activeId === v.id ? 'ring-2 ring-primary' : ''}`}
+            className={`rounded-md bg-surface p-3 ${highlightIds.includes(v.id) ? 'ring-2 ring-primary' : ''}`}
           >
-            {mark?.n != null && (
+            {numberById[v.id] != null && (
               <button
                 type="button"
-                className="mb-2 min-h-8 rounded-md border px-2 text-xs"
-                aria-pressed={activeId === v.id}
+                className="mb-2 min-h-10 rounded-md border px-2 text-sm"
+                aria-pressed={highlightIds.includes(v.id)}
                 onClick={() => onSelect?.(v.id)}
               >
-                Pin {mark.n}
+                Mark {numberById[v.id]}
               </button>
             )}
             {mark?.place === 'offscreen' && (
-              <p className="mb-2 text-xs text-muted-foreground">This element was outside the screenshot.</p>
+              <p className="mb-2 text-sm text-muted-foreground">This element was outside the screenshot.</p>
             )}
             {mark?.place === 'frame' && (
-              <p className="mb-2 text-xs text-muted-foreground">
+              <p className="mb-2 text-sm text-muted-foreground">
                 This element is inside another frame, so it has no pin.
               </p>
             )}
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Selector:{' '}
               <code className="font-mono text-foreground">{v.node.target.join(' → ')}</code>
             </p>
@@ -113,20 +120,30 @@ export function IssueGroup({
               <code>{v.node.html}</code>
             </pre>
             {v.node.failureSummary && (
-              <p className="mt-2 whitespace-pre-line text-xs text-muted-foreground">
+              <p className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
                 {v.node.failureSummary}
               </p>
             )}
-            {repair && (
-              <RepairCard
-                repair={repair}
-                draft={drafts[repair.id] ?? ''}
-                onDraft={(text) => onDraft?.(repair.id, text)}
-                accepted={acceptedIds.has(repair.id) || repair.accepted}
-                onAccept={() => onAccept?.(repair.id)}
-                onReject={() => onReject?.(repair.id)}
-              />
-            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+  const repairs = (
+    <ul className="mt-3 space-y-3">
+      {items.map((v) => {
+        const repair = repairsByViolation[v.id];
+        if (!repair) return null;
+        return (
+          <li key={repair.id}>
+            <RepairCard
+              repair={repair}
+              draft={drafts[repair.id] ?? ''}
+              onDraft={(text) => onDraft?.(repair.id, text)}
+              accepted={acceptedIds.has(repair.id) || repair.accepted}
+              onAccept={() => onAccept?.(repair.id)}
+              onReject={() => onReject?.(repair.id)}
+            />
           </li>
         );
       })}
@@ -134,10 +151,17 @@ export function IssueGroup({
   );
 
   return (
-    <article className="rounded-lg border bg-background p-4" aria-labelledby={`issue-title-${first.id}`}>
+    <article
+      className={`rounded-lg border bg-background p-4 ${highlighted ? 'ring-2 ring-primary' : ''}`}
+      aria-labelledby={`issue-title-${first.id}`}
+      onClick={(event) => {
+        if (event.target instanceof Element && event.target.closest('a, button, input, summary, textarea')) return;
+        onSelectGroup?.(items.map((v) => v.id));
+      }}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <SeverityBadge impact={group.impact} manual={manual} />
-        <span className="text-xs text-muted-foreground">
+        <span className="text-sm text-muted-foreground">
           {n} {n === 1 ? 'element' : 'elements'}
         </span>
         {onFix && !manual && !hasRepairs && (
@@ -153,47 +177,59 @@ export function IssueGroup({
           </Button>
         )}
       </div>
-      <h3 id={`issue-title-${first.id}`} className="mt-2 font-semibold">
+      {numbers.length > 0 && (
+        <p className="mt-2 text-sm">
+          {numbers.length === 1 ? 'Mark' : 'Marks'} {numbers.join(', ')}
+        </p>
+      )}
+      <h3 id={`issue-title-${first.id}`} className="mt-2 max-w-[65ch] text-base font-semibold leading-6">
         {first.title}
       </h3>
-      <p className="mt-1 text-sm">{first.explanation}</p>
-      <p className="mt-2 flex items-start gap-1.5 text-sm text-muted-foreground">
+      <p className="mt-2 flex items-start gap-1.5 text-sm">
         <Users aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-        <span>
-          <span className="font-medium text-foreground">Who it affects:</span> {first.whoItAffects}
+        <span className="max-w-[65ch]">
+          <span className="font-medium">Who it affects:</span> {first.whoItAffects}
         </span>
       </p>
-      <div className="mt-3">
-        <WcagChips refs={first.wcag.refs} />
-      </div>
+      {oneLine(first.explanation) && oneLine(first.explanation) !== first.title && (
+        <p className="mt-2 max-w-[65ch] text-sm leading-6">
+          <span className="font-medium">Why it matters:</span> {first.explanation}
+        </p>
+      )}
+      <p className="mt-2 max-w-[65ch] text-sm leading-6">
+        <span className="font-medium">How we fix it:</span>{' '}
+        {manual
+          ? `Check by hand. ${oneLine(first.explanation) || 'A person needs to look at this.'} Not applied yet.`
+          : fixStatus(first.ruleId, items.map((v) => repairsByViolation[v.id]).find(Boolean))}
+      </p>
 
-      {hasRepairs ? (
-        <div className="mt-3">{elements}</div>
-      ) : (
-        <details
-          className="mt-3"
-          ref={(node) => {
-            if (node && highlighted) node.open = true;
-          }}
-        >
-          <summary className="min-h-6 cursor-pointer text-sm font-medium text-primary">
-            Show {n === 1 ? 'the affected element' : `all ${n} affected elements`}
-          </summary>
+      <details
+        className="mt-3"
+        ref={(node) => {
+          if (node && highlighted) node.open = true;
+        }}
+      >
+        <summary className="min-h-10 cursor-pointer text-sm font-medium text-primary">Details</summary>
+        <div className="mt-2">
+          <div className="mt-2">
+            <WcagChips refs={first.wcag.refs} />
+          </div>
           {elements}
-        </details>
-      )}
-      {first.helpUrl && (
-        <a
-          href={first.helpUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-2 inline-flex items-center gap-1 text-sm text-primary underline"
-        >
-          Rule reference: {first.ruleId}
-          <ExternalLink aria-hidden="true" className="size-3" />
-          <span className="sr-only">(opens in a new tab)</span>
-        </a>
-      )}
+          {first.helpUrl && (
+            <a
+              href={first.helpUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-flex min-h-10 items-center gap-1 text-sm text-primary underline"
+            >
+              Rule reference: {first.ruleId}
+              <ExternalLink aria-hidden="true" className="size-3" />
+              <span className="sr-only">(opens in a new tab)</span>
+            </a>
+          )}
+        </div>
+      </details>
+      {hasRepairs && repairs}
     </article>
   );
 }

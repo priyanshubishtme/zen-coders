@@ -52,11 +52,13 @@ our origin.
 After a scan, the default results view adds a page preview under the score. `VITE_VISUAL=false`
 restores the single column.
 
-- One viewport, 1280×720, JPEG. Pins are fractions of that image (`left` / `top` percentages) so they stay aligned when the image scales. Each pin is a button, `Issue N: title`, keyboard reachable. A node below the fold has no pin; its card says it was outside the screenshot. A node in a frame has no pin.
-- Side by side is the default. A slider compares before and after. Reduced motion does not animate the slider. The after image appears only after Apply, from the patched copy, same viewport.
+- One viewport, 1280×720, JPEG. Each failing element with a measured box gets an outline and a numbered badge outside that box. Numbers follow reading order. The badge is a button named `Issue N, severity: what is broken`. A page-level issue (the `html` element, or a box that covers the viewport) is a chip in the Whole page strip, not a dot in the corner. Clicking a mark scrolls the issue list only. Clicking a card highlights every mark for that issue.
+- On a wide screen the preview stays on the left and the issues on the right. On a narrow screen they stack. Side by side and Slider compare the before and after screenshots only. A sticky sub-nav jumps to Preview, Issues, Simulators, Screen reader, Keyboard, Engine log, and Code.
+- Severity uses color and a shape (octagon, triangle, square, circle). Manual review is a dashed amber “Check by hand” chip, with one line from the explanation already on the issue. A legend and a show/hide marks control sit on the preview.
+- The issue card leads with what is broken, who it affects, why it matters, and how we fix it. Before Suggest fixes, that last line is the usual fix and says it has not been applied. Afterward it says automatic, draft to review, or manual. The rule, the WCAG link, and the snippet sit under Details.
 - If the picture is missing or expired, the preview says so and the issue list still works.
-- Engine log: `EventSource` on `GET /scans/:id/events`, plus the events saved on the scan. Filter by stage, export JSON. New lines use `role="status"`. A failed stage uses `role="alert"`.
-- Color view is a CSS/SVG filter on our screenshot (protanopia, deuteranopia, tritanopia). It is labeled approximate and is not a second detector. The screen-reader list is the accessible name already on each mark. The keyboard panel says focus order was not captured.
+- Engine log and code start collapsed. The log still streams `GET /scans/:id/events` and keeps the saved events. Filter by stage, export JSON. New lines use `role="status"`. A failed stage uses `role="alert"`.
+- Color view buttons read “Red-weak (Protanopia)”, “Green-weak (Deuteranopia)”, and “Blue-weak (Tritanopia)”. The sentence under them says the filter is not a second scan. Problem colors appear only when the scan already stored both colors. The screen-reader table truncates a name at 80 characters. The `html` element reads “Page title / language”. The keyboard panel fixes “1 control was” / “2 controls were”. An empty keyboard list still says focus order was not captured.
 - “Show original and patched code” loads Monaco only after that click. The text diff on each repair stays.
 - Header theme control: System, Light, Dark. `?theme=light` or `?theme=dark` wins for that load and is what the self-scan opens. The choice from the control is stored in `localStorage` key `accessfix.theme`. Tokens are unchanged.
 

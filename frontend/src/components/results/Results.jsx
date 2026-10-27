@@ -8,19 +8,22 @@ import { useSeverityParam } from '@/hooks/useSeverityParam.js';
 import { getScan, pagesZipUrl } from '@/lib/api.js';
 import { Link } from '@/lib/Link.jsx';
 import { visualOn } from '@/lib/flags.js';
+import { buildPreviewModel, scrollIssueIntoPane } from '@/lib/markLayout.js';
 import { SCORE_DISCLAIMER, applicableRepairs } from '@/lib/score.js';
-import { groupByRule } from '@/lib/severity.js';
+import { SEVERITIES, groupByRule } from '@/lib/severity.js';
 import { HeadingOutline } from './HeadingOutline.jsx';
+import { LogPanel } from './LogPanel.jsx';
 import { IssueGroup } from './IssueGroup.jsx';
 import { ScoreExplain } from './ScoreExplain.jsx';
 import { ScoreMeter } from './ScoreMeter.jsx';
 import { SeverityFilter } from './SeverityFilter.jsx';
 import { VerificationPanel } from './VerificationPanel.jsx';
-import { Workbench } from './Workbench.jsx';
+import { KeyboardPanel, ScreenReaderTable, Simulators } from './Simulators.jsx';
+import { CodeDisclosure, Workbench } from './Workbench.jsx';
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-function ScoreCard({ scan, verification, headingRef }) {
+function ScoreCard({ scan, verification, headingRef, repairs }) {
   const score = verification?.after ?? scan.score;
   const previous = verification ? verification.before : null;
   const source =
@@ -28,6 +31,15 @@ function ScoreCard({ scan, verification, headingRef }) {
       ? (scan.page?.finalUrl ?? scan.input.url)
       : `Pasted HTML (${(scan.input.bytes / 1024).toFixed(1)} KB)`;
   const issues = groupByRule(scan.violations).length;
+  const byImpact = scan.violations.reduce((acc, item) => {
+    acc[item.impact] = (acc[item.impact] ?? 0) + 1;
+    return acc;
+  }, {});
+  const people = scan.manualReview.length;
+  const peopleLine = people === 1 ? '1 needs a person to check' : `${people} need a person to check`;
+  const proposed = repairs?.repairs ?? [];
+  const automatic = proposed.filter((item) => item.strategy === 'deterministic' && item.status !== 'manual-review').length;
+  const drafts = proposed.filter((item) => item.strategy === 'llm' || item.strategy === 'template').length;
   return (
     <div className="rounded-lg border bg-surface p-4 sm:p-6">
       <h2 ref={headingRef} id="score-heading" tabIndex={-1} className="text-lg font-semibold">
@@ -49,6 +61,18 @@ function ScoreCard({ scan, verification, headingRef }) {
           on {plural(scan.violations.length, 'element')}
         </span>
       </p>
+      <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm" aria-label="Issues by severity">
+        {SEVERITIES.map((item) => (
+          <li key={item.value}>
+            {item.label} {byImpact[item.value] ?? 0}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 max-w-[65ch] text-sm">
+        {proposed.length === 0
+          ? `${peopleLine}. Suggest fixes to see how many can be applied automatically.`
+          : `${automatic} can be applied automatically. ${drafts} ${drafts === 1 ? 'is a draft' : 'are drafts'} to review. ${peopleLine}.`}
+      </p>
       <p className="mt-1 text-sm text-muted-foreground">
         {plural(scan.manualReview.length, 'item')}{' '}
         {scan.manualReview.length === 1 ? 'needs' : 'need'} manual review ·{' '}
@@ -56,12 +80,12 @@ function ScoreCard({ scan, verification, headingRef }) {
         {scan.timings.totalMs != null &&
           ` · scanned in ${(scan.timings.totalMs / 1000).toFixed(1)} s`}
       </p>
-      <p className="mt-2 text-xs text-muted-foreground">{SCORE_DISCLAIMER}</p>
+      <p className="mt-2 max-w-[65ch] text-sm text-muted-foreground">{SCORE_DISCLAIMER}</p>
       <p className="mt-3">
         <Link href={`/scans/${scan.id}/report`} className="text-sm text-primary underline">
           Open shareable report
         </Link>
-        <span className="ml-2 text-xs text-muted-foreground">
+        <span className="ml-2 text-sm text-muted-foreground">
           Anyone with the link can view it. Links expire after 30 days.
         </span>
       </p>
@@ -204,12 +228,19 @@ export function Results({ scan, health = null }) {
   const [severity, setSeverity] = useSeverityParam();
   const [useAi, setUseAi] = useState(true);
   const [activeId, setActiveId] = useState(null);
+  const [highlightIds, setHighlightIds] = useState([]);
+  const [colorFilter, setColorFilter] = useState(null);
   const [freshShots, setFreshShots] = useState(null);
   const llmOn = health?.checks.llm === 'on';
   const llmPaused = health?.checks.llm === 'circuit-open';
   const repairs = useRepairs(scan.id, { useLlm: llmOn && useAi });
 
   useEffect(() => headingRef.current?.focus(), [scan.id]);
+
+  useEffect(() => {
+    if (highlightIds.length !== 1) return;
+    scrollIssueIntoPane(highlightIds[0]);
+  }, [highlightIds]);
 
   useEffect(() => {
     if (!repairs.verification) return undefined;
@@ -236,10 +267,25 @@ export function Results({ scan, health = null }) {
     () => Object.fromEntries((scan.marks ?? []).map((mark) => [mark.violationId, mark])),
     [scan.marks],
   );
+  const preview = useMemo(
+    () => buildPreviewModel(scan.violations, scan.manualReview, scan.marks ?? []),
+    [scan],
+  );
+  function selectOne(id) {
+    setActiveId(id);
+    setHighlightIds([id]);
+  }
+  function selectGroup(ids) {
+    setActiveId(ids[0] ?? null);
+    setHighlightIds(ids);
+  }
   const issueProps = {
     marksById,
+    numberById: preview.numberById,
+    highlightIds,
     activeId,
-    onSelect: setActiveId,
+    onSelect: selectOne,
+    onSelectGroup: selectGroup,
     repairsByViolation,
     drafts: repairs.drafts,
     onDraft: repairs.setDraft,
@@ -252,7 +298,7 @@ export function Results({ scan, health = null }) {
 
   return (
     <div>
-      <ScoreCard scan={scan} verification={repairs.verification} headingRef={headingRef} />
+      <ScoreCard scan={scan} verification={repairs.verification} headingRef={headingRef} repairs={repairs} />
 
       {scan.partial && (
         <Alert tone="info" className="mt-4" role="status">
@@ -323,14 +369,51 @@ export function Results({ scan, health = null }) {
 
       {repairs.verification && <VerificationPanel verification={repairs.verification} />}
 
-      {visualOn && (
-        <Workbench
-          scan={{ ...scan, shots: freshShots ?? scan.shots }}
-          verification={repairs.verification}
-          activeId={activeId}
-          onSelect={setActiveId}
-        />
-      )}
+      <nav aria-label="On this page" className="sticky top-0 z-20 mt-6 border-y bg-background py-2">
+        <ul className="flex gap-4 overflow-x-auto text-sm">
+          {[
+            visualOn ? ['preview', 'Preview'] : null,
+            ['issues-heading', 'Issues'],
+            visualOn ? ['simulators', 'Simulators'] : null,
+            ['screen-reader', 'Screen reader'],
+            ['keyboard', 'Keyboard'],
+            ['engine-log', 'Engine log'],
+            visualOn ? ['code', 'Code'] : null,
+          ]
+            .filter(Boolean)
+            .map(([id, label]) => (
+            <li key={id}>
+              <a href={`#${id}`} className="inline-flex min-h-10 items-center text-primary underline">
+                {label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      <div className="mt-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-4">
+        {visualOn && (
+          <Workbench
+            scan={{ ...scan, shots: freshShots ?? scan.shots }}
+            highlightIds={highlightIds}
+            onSelect={selectOne}
+            filter={colorFilter}
+          />
+        )}
+        <div id="issues-pane" className="min-w-0 lg:max-h-[80vh] lg:overflow-y-auto">
+          <IssueSections
+            groups={groups}
+            visible={visible}
+            severity={severity}
+            setSeverity={setSeverity}
+            counts={counts}
+            manual={manual}
+            advisory={advisory}
+            scan={scan}
+            issueProps={issueProps}
+          />
+        </div>
+      </div>
 
       {scan.network?.blocked > 0 && (
         <Alert tone="info" icon={ShieldOff} className="mt-4" role="note">
@@ -354,15 +437,43 @@ export function Results({ scan, health = null }) {
         </Alert>
       )}
 
-      <Section
-        id="issues-heading"
-        title="Issues"
-        description="Grouped by rule. Expand an issue to see each element."
-      >
+      <div className="mt-8 space-y-8">
+        {visualOn && (
+          <section aria-labelledby="simulators-heading" className="rounded-lg border bg-background p-4">
+            <h2 id="simulators-heading" className="text-lg font-semibold">
+              Simulators
+            </h2>
+            <div className="mt-3">
+              <Simulators
+                onFilter={setColorFilter}
+                violations={[...(scan.violations ?? []), ...(scan.manualReview ?? [])]}
+              />
+            </div>
+          </section>
+        )}
+        <section aria-labelledby="reader-heading" className="rounded-lg border bg-background p-4">
+          <h2 id="reader-heading" className="text-lg font-semibold">
+            Screen reader and keyboard
+          </h2>
+          <div className="mt-3 space-y-6">
+            <ScreenReaderTable marks={scan.marks ?? []} numberById={preview.numberById} />
+            <KeyboardPanel keyboard={scan.keyboard ?? []} />
+          </div>
+        </section>
+        <LogPanel key={scan.id} scanId={scan.id} saved={scan.events ?? []} />
+        {visualOn && <CodeDisclosure scanId={scan.id} patchedHtml={repairs.verification?.patchedHtml} />}
+      </div>
+    </div>
+  );
+}
+
+function IssueSections({ groups, visible, severity, setSeverity, counts, manual, advisory, scan, issueProps }) {
+  return (
+    <>
+      <Section id="issues-heading" title="Issues" description="Grouped by severity, then by rule. Open Details for the rule and the element.">
         {groups.length === 0 ? (
           <Alert tone="info" icon={CircleCheck} title="No automated WCAG issues found" role="note">
-            That is a good start, not a guarantee. Review the manual checks and advisory notes
-            below.
+            That is a good start, not a guarantee. Review the manual checks and advisory notes below.
           </Alert>
         ) : (
           <>
@@ -370,13 +481,24 @@ export function Results({ scan, health = null }) {
             <p role="status" className="mt-2 text-sm text-muted-foreground">
               Showing {plural(visible.length, 'issue')} of {groups.length}.
             </p>
-            <ul className="mt-3 space-y-3">
-              {visible.map((g) => (
-                <li key={g.ruleId}>
-                  <IssueGroup group={g} {...issueProps} />
-                </li>
-              ))}
-            </ul>
+            {SEVERITIES.map((item) => {
+              const list = visible.filter((group) => group.impact === item.value);
+              if (list.length === 0) return null;
+              return (
+                <div key={item.value} className="mt-4">
+                  <h3 className="text-sm font-semibold">
+                    {item.label} ({list.length})
+                  </h3>
+                  <ul className="mt-2 space-y-3">
+                    {list.map((group) => (
+                      <li key={group.ruleId}>
+                        <IssueGroup group={group} {...issueProps} />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
           </>
         )}
       </Section>
@@ -390,9 +512,9 @@ export function Results({ scan, health = null }) {
           <p className="text-sm text-muted-foreground">Nothing flagged for manual review.</p>
         ) : (
           <ul className="space-y-3">
-            {manual.map((g) => (
-              <li key={g.ruleId}>
-                <IssueGroup group={g} manual />
+            {manual.map((group) => (
+              <li key={group.ruleId}>
+                <IssueGroup group={group} manual {...issueProps} />
               </li>
             ))}
           </ul>
@@ -410,14 +532,14 @@ export function Results({ scan, health = null }) {
         </div>
         {advisory.length > 0 && (
           <ul className="mt-4 space-y-3">
-            {advisory.map((g) => (
-              <li key={g.ruleId}>
-                <IssueGroup group={g} {...issueProps} />
+            {advisory.map((group) => (
+              <li key={group.ruleId}>
+                <IssueGroup group={group} {...issueProps} />
               </li>
             ))}
           </ul>
         )}
       </Section>
-    </div>
+    </>
   );
 }
