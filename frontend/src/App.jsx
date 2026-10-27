@@ -3,6 +3,7 @@ import { ErrorPanel } from '@/components/ErrorPanel.jsx';
 import { ScanForm } from '@/components/ScanForm.jsx';
 import { ScanProgress } from '@/components/ScanProgress.jsx';
 import { Results } from '@/components/results/Results.jsx';
+import { CrawlPages } from '@/components/results/CrawlPages.jsx';
 import { Alert } from '@/components/ui/alert.jsx';
 import { Shell } from '@/components/layout/Shell.jsx';
 import { ErrorBoundary } from '@/components/ErrorBoundary.jsx';
@@ -11,7 +12,7 @@ import { useScan } from '@/hooks/useScan.js';
 import { usePath } from '@/lib/path.js';
 import { Business } from '@/pages/Business.jsx';
 import { History } from '@/pages/History.jsx';
-import { LandingIntro } from '@/pages/LandingIntro.jsx';
+import { LandingIntro, LandingProof } from '@/pages/LandingIntro.jsx';
 import { Login } from '@/pages/Login.jsx';
 import { Projects } from '@/pages/Projects.jsx';
 import { ReportPage } from '@/pages/ReportPage.jsx';
@@ -29,42 +30,33 @@ function Workspace({ health, healthState, pollMs }) {
   const scan = useScan({ pollMs });
   const busy = scan.phase === 'submitting' || scan.phase === 'polling';
   const blocked = disabledReason(healthState);
+  const done = scan.phase === 'done' && scan.scan?.status === 'completed';
   return (
-    <>
-      <LandingIntro />
-      <h2 className="mt-10 text-lg font-semibold">Try it on a page</h2>
-      <div className="mt-4 space-y-6">
-        {blocked && healthState !== 'checking' && (
-          <Alert tone="warning" icon={ServerCrash} title="Scanning is unavailable" role="status">
-            {blocked}
-          </Alert>
-        )}
-        <ScanForm
-          onSubmit={scan.start}
-          busy={busy}
-          disabledReason={blocked}
-          maxBytes={health?.limits.maxHtmlBytes}
-        />
-        {busy && scan.scan?.pages?.length > 0 && (
-          <ul className="rounded-lg border px-3 py-2 text-sm" aria-label="Crawl progress">
-            {scan.scan.pages.map((page) => (
-              <li key={`${page.depth}-${page.url}`} className="flex justify-between gap-3 py-1">
-                <span className="font-mono">{page.url}</span>
-                <span>{page.status === 'completed' ? 'Finished' : page.reason}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {busy && <ScanProgress stage={scan.scan?.stage ?? 'submitting'} onCancel={scan.cancel} />}
-        {scan.phase === 'error' && <ErrorPanel error={scan.error} onRetry={scan.cancel} />}
-        {scan.phase === 'done' && scan.scan.status === 'failed' && (
-          <ErrorPanel error={scan.scan.error} onRetry={scan.cancel} />
-        )}
-        {scan.phase === 'done' && scan.scan.status === 'completed' && (
-          <Results scan={scan.scan} health={health} />
-        )}
-      </div>
-    </>
+    <div className="space-y-8">
+      {!done && <LandingIntro />}
+      {blocked && healthState !== 'checking' && (
+        <Alert tone="warning" icon={ServerCrash} title="Scanning is unavailable" role="status">
+          {blocked}
+        </Alert>
+      )}
+      <ScanForm
+        onSubmit={scan.start}
+        busy={busy}
+        disabledReason={blocked}
+        maxBytes={health?.limits.maxHtmlBytes}
+        crawl={health?.crawl}
+      />
+      {busy && scan.scan?.pages?.length > 0 && (
+        <CrawlPages scan={scan.scan} live zipMaxBytes={health?.crawl?.zipMaxBytes} />
+      )}
+      {busy && <ScanProgress stage={scan.scan?.stage ?? 'submitting'} onCancel={scan.cancel} />}
+      {scan.phase === 'error' && <ErrorPanel error={scan.error} onRetry={scan.cancel} />}
+      {scan.phase === 'done' && scan.scan.status === 'failed' && (
+        <ErrorPanel error={scan.scan.error} onRetry={scan.cancel} />
+      )}
+      {done && <Results scan={scan.scan} health={health} />}
+      {!done && <LandingProof />}
+    </div>
   );
 }
 
@@ -76,7 +68,7 @@ function Router({ path, ...rest }) {
   if (path === '/history') return <History />;
   if (path === '/business') return <Business health={rest.health} />;
   if (path === '/login' || path === '/signup') return <Login mode={path === '/signup' ? 'signup' : 'login'} />;
-  if (path === '/projects') return <Projects />;
+  if (path === '/projects') return <Projects health={rest.health} />;
   return <Workspace {...rest} />;
 }
 
@@ -84,9 +76,10 @@ function Router({ path, ...rest }) {
 export default function App({ pollMs } = {}) {
   const { state: healthState, health } = useHealth();
   const path = usePath();
+  const bare = path === '/login' || path === '/signup';
   return (
     <ErrorBoundary>
-      <Shell healthState={healthState} health={health} path={path}>
+      <Shell healthState={healthState} health={health} path={path} bare={bare}>
         <Router path={path} health={health} healthState={healthState} pollMs={pollMs} />
       </Shell>
     </ErrorBoundary>

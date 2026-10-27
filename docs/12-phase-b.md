@@ -64,7 +64,7 @@ reports `quotas: "off"`. The business page must not present Free/Pro numbers as 
 that flag is off.
 
 These stay on either way, because they protect the server: the burst limit (`SCAN_RATE_LIMIT_RPM`,
-default 30), the Chromium cap, per-scan and per-crawl timeouts, the 2 MB page cap, the 256 MB
+default 30), the Chromium cap, per-scan and per-crawl timeouts, the 5 MB page cap, the 256 MB
 HTML cache (oldest out first), SSRF on the resolved address and every redirect, `robots.txt`,
 and the 20 MB zip refusal.
 

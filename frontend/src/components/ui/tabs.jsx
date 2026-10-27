@@ -24,7 +24,7 @@ export function Tabs({ id, label, tabs, value, onChange, children }) {
       <div
         role="tablist"
         aria-label={label}
-        className="inline-flex gap-1 rounded-md bg-surface p-1"
+        className="inline-flex max-w-full gap-1 overflow-x-auto rounded-lg border bg-background p-1"
       >
         {tabs.map((t) => {
           const selected = t.value === value;
@@ -41,8 +41,10 @@ export function Tabs({ id, label, tabs, value, onChange, children }) {
               onClick={() => onChange(t.value)}
               onKeyDown={onKeyDown}
               className={cn(
-                'min-h-9 rounded px-4 text-sm font-medium',
-                selected ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground',
+                'min-h-9 shrink-0 rounded-md px-4 text-sm font-medium transition-colors',
+                selected
+                  ? 'bg-raised text-foreground ring-1 ring-border'
+                  : 'text-muted-foreground hover:text-foreground',
               )}
             >
               {t.label}

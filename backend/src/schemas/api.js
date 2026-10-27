@@ -132,6 +132,32 @@ export const HealthResponse = z.object({
     /** true only in dev/test; the UI shows a warning badge. */
     privateUrlsAllowed: z.boolean(),
   }),
+  plans: z
+    .object({
+      loggedOutScansDay: z.number().int().nonnegative(),
+      free: z.object({
+        scansDay: z.number().int(),
+        pagesDay: z.number().int(),
+        tokensDay: z.number().int(),
+        crawlPages: z.number().int(),
+      }),
+      pro: z.object({
+        scansDay: z.number().int(),
+        pagesDay: z.number().int(),
+        tokensDay: z.number().int(),
+        crawlPages: z.number().int(),
+      }),
+    })
+    .optional(),
+  crawl: z
+    .object({
+      maxPages: z.number().int(),
+      maxDepth: z.number().int(),
+      budgetMs: z.number().int(),
+      gapMs: z.number().int(),
+      zipMaxBytes: z.number().int(),
+    })
+    .optional(),
 });
 
 export const UsageResponse = z.object({

@@ -195,7 +195,7 @@ sequenceDiagram
 What happens before the 202, so bad input never occupies Chromium:
 
 1. Zod checks the body. Empty HTML, non-http URLs, and broken JSON are `400` or `422`.
-2. HTML larger than 500 KB is `413`. Binary-looking input (too many control characters) is `422`. NUL bytes are stripped.
+2. HTML larger than `MAX_HTML_BYTES` (default 5 MB) is `413`. Binary-looking input (too many control characters) is `422`. NUL bytes are stripped. Uploaded CSS is inlined in the browser first; the cap applies to the combined HTML.
 3. For a URL, DNS is resolved and private addresses are `URL_BLOCKED`.
 4. An optional `Idempotency-Key` header (max 128 characters, remembered 24 hours in memory) returns the same scan id if you retry the same POST.
 5. The record stores a SHA-256 of the input, not the HTML. The raw HTML goes only into the one-hour source cache after the scan succeeds.

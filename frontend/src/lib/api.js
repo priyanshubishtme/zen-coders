@@ -112,6 +112,9 @@ export const login = (body) => request('/login', { method: 'POST', body: JSON.st
 export const logout = () => request('/logout', { method: 'POST', body: '{}' });
 export const getMe = () => request('/me');
 export const getShare = (token) => request(`/shares/${encodeURIComponent(token)}`);
+/** @returns {Promise<{ path: string, expiresAt: string }>} */
+export const createShare = (id) =>
+  request(`/scans/${encodeURIComponent(id)}/share`, { method: 'POST', body: '{}' });
 
 /** @returns {Promise<Scan>} */
 export const getScan = (id, signal) => request(`/scans/${encodeURIComponent(id)}`, { signal });

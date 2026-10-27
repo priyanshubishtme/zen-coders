@@ -1,12 +1,12 @@
 import { cva } from 'class-variance-authority';
 import { cn } from '@/lib/utils.js';
 
-const alertVariants = cva('flex gap-3 rounded-lg border p-4 text-sm', {
+const alertVariants = cva('flex gap-3 rounded-lg border border-l-4 p-4 text-sm', {
   variants: {
     tone: {
-      error: 'border-critical bg-surface text-foreground',
-      warning: 'border-moderate bg-surface text-foreground',
-      info: 'border-border bg-surface text-foreground',
+      error: 'border-critical bg-surface text-foreground [&>svg]:text-critical',
+      warning: 'border-moderate bg-surface text-foreground [&>svg]:text-moderate',
+      info: 'border-border border-l-link bg-surface text-foreground [&>svg]:text-link',
     },
   },
   defaultVariants: { tone: 'info' },

@@ -1,6 +1,5 @@
-import { CircleCheck, Download, OctagonAlert } from 'lucide-react';
+import { CircleCheck, OctagonAlert } from 'lucide-react';
 import { Alert } from '@/components/ui/alert.jsx';
-import { patchedHtmlUrl } from '@/lib/api.js';
 import { groupByRule } from '@/lib/severity.js';
 import { IssueGroup } from './IssueGroup.jsx';
 
@@ -59,28 +58,11 @@ export function VerificationPanel({ verification }) {
         </p>
       </Alert>
 
-      <div className="mt-4">
-        <a
-          href={patchedHtmlUrl(v.scanId)}
-          download
-          className="inline-flex min-h-10 items-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-surface"
-        >
-          <Download aria-hidden="true" className="size-4" />
-          Download patched HTML
+      <p className="mt-3 text-sm">
+        <a href="#code" className="text-link underline">
+          Copy or download the patched HTML
         </a>
-      </div>
-
-      <details className="mt-4">
-        <summary className="min-h-6 cursor-pointer text-sm font-medium text-primary">
-          Preview patched page
-        </summary>
-        <iframe
-          title="Patched page preview"
-          sandbox=""
-          srcDoc={v.patchedHtml}
-          className="mt-2 h-80 w-full rounded-md border bg-white"
-        />
-      </details>
+      </p>
 
       <Bucket
         id="resolved-heading"

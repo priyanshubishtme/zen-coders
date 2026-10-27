@@ -12,7 +12,7 @@ const EnvSchema = z.object({
   CORS_ORIGINS: z.string().default('http://localhost:5173'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
-  MAX_HTML_BYTES: z.coerce.number().int().positive().default(512_000),
+  MAX_HTML_BYTES: z.coerce.number().int().positive().default(5_000_000),
   SCAN_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
   RATE_LIMIT_RPM: z.coerce.number().int().positive().default(300),
@@ -80,7 +80,7 @@ const EnvSchema = z.object({
   PAGE_BUDGET_MS: z.coerce.number().int().positive().default(15_000),
   DOM_QUIET_MS: z.coerce.number().int().nonnegative().default(500),
   KEYBOARD_MAX_STOPS: z.coerce.number().int().positive().default(50),
-  PAGE_HTML_MAX_BYTES: z.coerce.number().int().positive().default(2_000_000),
+  PAGE_HTML_MAX_BYTES: z.coerce.number().int().positive().default(5_000_000),
   CACHE_MAX_BYTES: z.coerce.number().int().positive().default(256 * 1024 * 1024),
   ZIP_MAX_BYTES: z.coerce.number().int().positive().default(20 * 1024 * 1024),
   AUTH_RETENTION_MS: z.coerce.number().int().positive().default(15 * 60 * 1000),

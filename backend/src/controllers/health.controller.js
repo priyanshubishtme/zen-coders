@@ -22,6 +22,28 @@ export function createHealthController({ scanner, repo, llm, config, version, me
           maxHtmlBytes: config.MAX_HTML_BYTES,
           privateUrlsAllowed: config.ALLOW_PRIVATE_URLS,
         },
+        plans: {
+          loggedOutScansDay: config.LOGGED_OUT_SCANS_DAY,
+          free: {
+            scansDay: config.FREE_SCANS_DAY,
+            pagesDay: config.FREE_PAGES_DAY,
+            tokensDay: config.TOKEN_DAILY_OVERRIDE || config.FREE_TOKENS_DAY,
+            crawlPages: config.QUOTAS_ENABLED ? config.FREE_CRAWL_PAGES : config.CRAWL_MAX_PAGES,
+          },
+          pro: {
+            scansDay: config.PRO_SCANS_DAY,
+            pagesDay: config.PRO_PAGES_DAY,
+            tokensDay: config.PRO_TOKENS_DAY,
+            crawlPages: config.QUOTAS_ENABLED ? config.PRO_CRAWL_PAGES : config.CRAWL_MAX_PAGES,
+          },
+        },
+        crawl: {
+          maxPages: config.CRAWL_MAX_PAGES,
+          maxDepth: config.CRAWL_MAX_DEPTH,
+          budgetMs: config.CRAWL_BUDGET_MS,
+          gapMs: config.CRAWL_GAP_MS,
+          zipMaxBytes: config.ZIP_MAX_BYTES,
+        },
       });
     },
   };

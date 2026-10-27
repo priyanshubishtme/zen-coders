@@ -11,7 +11,7 @@ const LEVEL_TAGS = [
 ];
 const IMPACTS = new Set(['critical', 'serious', 'moderate', 'minor']);
 
-function wcagFromTags(tags) {
+export function wcagFromTags(tags) {
   const criteria = [...new Set(tags.map(criterionFromTag).filter(Boolean))];
   const level = LEVEL_TAGS.find(([, t]) => t.some((x) => tags.includes(x)))?.[0] ?? null;
   return { criteria, level, refs: criteria.map(criterionRef) };

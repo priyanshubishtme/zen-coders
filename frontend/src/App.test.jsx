@@ -59,6 +59,9 @@ describe('input', () => {
     await screen.findByText('API online');
     const htmlTab = screen.getByRole('tab', { name: 'Paste HTML' });
     fireEvent.keyDown(htmlTab, { key: 'ArrowRight' });
+    const filesTab = screen.getByRole('tab', { name: 'Upload files' });
+    expect(filesTab).toHaveAttribute('aria-selected', 'true');
+    fireEvent.keyDown(filesTab, { key: 'ArrowRight' });
     expect(screen.getByRole('tab', { name: 'Scan a URL' })).toHaveAttribute(
       'aria-selected',
       'true',
@@ -77,6 +80,46 @@ describe('input', () => {
     await screen.findByText('Bakery · Pasted HTML (2.0 KB)');
     const post = fetch.mock.calls.find(([, init]) => init?.method === 'POST');
     expect(JSON.parse(post[1].body).input.html).toContain('Weekly specials');
+  });
+
+  it('puts uploaded CSS inside the uploaded HTML before scanning', async () => {
+    const fetch = mockApi();
+    vi.stubGlobal('fetch', fetch);
+    renderApp();
+    await screen.findByText('API online');
+    fireEvent.click(screen.getByRole('tab', { name: 'Upload files' }));
+    const input = document.querySelector('input[type="file"]');
+    const page = new File(['<html><head><link rel="stylesheet" href="site.css"></head><body><p>x</p></body></html>'], 'index.html', {
+      type: 'text/html',
+    });
+    const css = new File(['p{color:#999}'], 'site.css', { type: 'text/css' });
+    fireEvent.change(input, { target: { files: [page, css] } });
+    expect(await screen.findByText('replaces its <link>')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Scan' }));
+    await waitFor(() => expect(fetch.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(true));
+    const post = fetch.mock.calls.find(([, init]) => init?.method === 'POST');
+    const html = JSON.parse(post[1].body).input.html;
+    expect(html).toContain('<style data-accessfix-file="site.css">');
+    expect(html).not.toContain('<link');
+  });
+});
+
+describe('checks', () => {
+  it('lists failed, manual and passed rules from the stored score', async () => {
+    const score = sampleScore({
+      rules: [
+        ...sampleScore().rules,
+        { ruleId: 'document-title', impact: 'serious', weight: 7, pass: 1, fail: 0 },
+      ],
+    });
+    vi.stubGlobal('fetch', mockApi({ scans: [completedScan({ score })] }));
+    renderApp();
+    await pasteAndScan();
+    const checks = await screen.findByRole('region', { name: 'Checks (3)' });
+    expect(within(checks).getAllByText('Failed').length).toBeGreaterThanOrEqual(2);
+    expect(within(checks).getByText('Page has no title')).toBeInTheDocument();
+    fireEvent.click(within(checks).getByRole('button', { name: /^Passed/ }));
+    expect(within(checks).getAllByRole('row')).toHaveLength(2);
   });
 });
 

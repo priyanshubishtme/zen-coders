@@ -50,6 +50,47 @@ function scoreLine(score) {
   return String(score.value);
 }
 
+function checksRows(report) {
+  const seen = new Set();
+  const rows = [];
+  for (const rule of report.score?.rules ?? []) {
+    seen.add(rule.ruleId);
+    const status = rule.fail > 0 ? 'Failed' : 'Passed';
+    rows.push(
+      `<tr><td><code>${escapeHtml(rule.ruleId)}</code></td><td>${status}</td><td>${rule.pass + rule.fail}</td><td>${rule.fail}</td></tr>`,
+    );
+  }
+  const manuals = new Map();
+  for (const item of report.manualReview ?? []) {
+    if (seen.has(item.ruleId)) continue;
+    const row = manuals.get(item.ruleId);
+    if (row) row.n += 1;
+    else manuals.set(item.ruleId, { id: item.ruleId, n: 1 });
+  }
+  for (const item of manuals.values()) {
+    rows.push(
+      `<tr><td><code>${escapeHtml(item.id)}</code></td><td>Check by hand</td><td>${item.n}</td><td>—</td></tr>`,
+    );
+  }
+  return rows.join('') || '<tr><td colspan="4">No rule results were stored for this scan.</td></tr>';
+}
+
+function checksMarkdown(report) {
+  const lines = [];
+  const seen = new Set();
+  for (const rule of report.score?.rules ?? []) {
+    seen.add(rule.ruleId);
+    const status = rule.fail > 0 ? 'Failed' : 'Passed';
+    lines.push(`- ${rule.ruleId}: ${status} (${rule.pass + rule.fail} checked, ${rule.fail} failing)`);
+  }
+  const manuals = new Set();
+  for (const item of report.manualReview ?? []) {
+    if (!seen.has(item.ruleId)) manuals.add(item.ruleId);
+  }
+  for (const id of manuals) lines.push(`- ${id}: Check by hand`);
+  return lines.join('\n') || 'No rule results were stored for this scan.';
+}
+
 function issueList(items) {
   return items
     .map(
@@ -91,6 +132,12 @@ ${report.screenshotsNote ? `<p class="note">${escapeHtml(report.screenshotsNote)
   <tr><th>After</th><td>${escapeHtml(after)}</td></tr>
   <tr><th>Generated</th><td>${escapeHtml(report.generatedAt)}</td></tr>
 </table>
+<h2>Checks</h2>
+<p class="note">Every automated rule that applied to this page. Rules with nothing to check (for example video captions on a page without video) are not listed. A pass is an automated pass, not a WCAG conformance claim.</p>
+<table>
+  <tr><th>Rule</th><th>Result</th><th>Elements checked</th><th>Failing</th></tr>
+  ${checksRows(report)}
+</table>
 <h2>Resolved (${report.resolved.length})</h2>
 <ul>${issueList(report.resolved) || '<li>None</li>'}</ul>
 <h2>Remaining (${report.remaining.length})</h2>
@@ -124,6 +171,12 @@ ${report.disclaimer}
 - Scan: \`${report.scanId}\`
 - Before: ${scoreLine(report.before)}
 - After: ${scoreLine(report.after)}
+
+## Checks
+
+Every automated rule that applied to this page. Rules with nothing to check are not listed.
+
+${checksMarkdown(report)}
 
 ## Resolved
 

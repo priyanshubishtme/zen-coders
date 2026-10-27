@@ -9,6 +9,18 @@ export function loadHistory() {
   }
 }
 
+/** Add fields to a remembered scan, such as the score after verified fixes. */
+export function updateHistory(id, patch) {
+  const list = loadHistory();
+  const next = list.map((e) => (e.id === id ? { ...e, ...patch } : e));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(next));
+  } catch {
+    /* storage full or blocked: history is a convenience */
+  }
+  return next;
+}
+
 /** Keep this browser's scan ids. Server has no global list. */
 export function rememberScan(entry) {
   const next = [entry, ...loadHistory().filter((e) => e.id !== entry.id)].slice(0, 50);

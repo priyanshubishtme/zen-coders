@@ -40,7 +40,7 @@ export function ScanProgress({ stage, onCancel }) {
             >
               <Icon
                 aria-hidden="true"
-                className={`size-4 ${state === 'done' ? 'text-verified' : ''} ${state === 'current' ? 'animate-spin text-primary' : ''}`}
+                className={`size-4 ${state === 'done' ? 'text-verified' : ''} ${state === 'current' ? 'animate-spin text-link' : ''}`}
               />
               <span>{s.label}</span>
               <span className="sr-only">

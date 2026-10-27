@@ -7,7 +7,7 @@ export function ScoreExplain({ score }) {
   const inner = t === 0 ? 'nothing applied' : `round(100 × (1 − ${f} / ${t}))`;
   return (
     <details className="mt-3">
-      <summary className="min-h-6 cursor-pointer text-sm font-medium text-primary">
+      <summary className="min-h-6 cursor-pointer text-sm font-medium text-link">
         Explain this score
       </summary>
       <div className="mt-2 space-y-3 text-sm">

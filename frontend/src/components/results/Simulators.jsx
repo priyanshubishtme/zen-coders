@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import { TriangleAlert } from 'lucide-react';
-import { announcedName, keyboardSentence, problemColors } from '@/lib/markLayout.js';
+import { announcedName, keyboardSentence } from '@/lib/markLayout.js';
 
 /** Approximate matrices. These recolor our screenshot only. They are not a diagnosis. */
 const MATRICES = {
@@ -20,11 +20,10 @@ const VIEWS = [
  * @param {{ onFilter: (filter: string | null) => void,
  *   violations?: { id: string, title: string, node?: { evidence?: { fgColor?: string, bgColor?: string | null } } }[] }} props
  */
-export function Simulators({ onFilter, violations = [] }) {
+export function Simulators({ onFilter }) {
   const [view, setView] = useState('none');
   const filterId = useId().replace(/:/g, '');
   const filter = view === 'none' ? null : `url(#${filterId}-${view})`;
-  const colors = problemColors(violations);
 
   useEffect(() => {
     onFilter(filter);
@@ -58,23 +57,6 @@ export function Simulators({ onFilter, violations = [] }) {
       <p className="mt-2 max-w-[65ch] text-sm text-muted-foreground">
         This filter shows how these colors may appear. It is not a second scan.
       </p>
-      {colors.length > 0 && (
-        <div className="mt-3">
-          <h4 className="text-sm font-semibold">Problem colors</h4>
-          <ul className="mt-1 space-y-1 text-sm">
-            {colors.map((row) => (
-              <li key={row.id} className="flex flex-wrap items-center gap-2">
-                <span className="inline-block size-4 border" style={{ background: row.fg }} aria-hidden="true" />
-                <span className="font-mono">{row.fg}</span>
-                on
-                <span className="inline-block size-4 border" style={{ background: row.bg }} aria-hidden="true" />
-                <span className="font-mono">{row.bg}</span>
-                <span className="text-muted-foreground">{row.title}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }
@@ -131,7 +113,7 @@ function NameRow({ mark, number }) {
       <td className="max-w-[65ch] py-2 pr-3">
         {open && spoken.full ? spoken.full : spoken.text}
         {spoken.truncated && (
-          <button type="button" className="ml-2 min-h-10 text-primary underline" onClick={() => setOpen((value) => !value)}>
+          <button type="button" className="ml-2 min-h-10 text-link underline" onClick={() => setOpen((value) => !value)}>
             {open ? 'Show less' : 'Show more'}
           </button>
         )}
@@ -159,7 +141,7 @@ export function KeyboardPanel({ keyboard = [] }) {
       <h3 className="text-sm font-semibold">Keyboard</h3>
       {keyboard.length === 0 ? (
         <p className="mt-1 max-w-[65ch] text-sm text-muted-foreground">
-          Focus order was not captured. This phase does not press Tab.
+          The Tab walk finished without a recorded problem. We press Tab up to 50 times and flag controls that were never reached, or that took focus with no visible outline. Those hints do not change the score. A person still has to try the page with a keyboard.
         </p>
       ) : (
         <ul className="mt-1 max-w-[65ch] list-disc space-y-1 pl-5 text-sm">

@@ -1,4 +1,4 @@
-import { isWcagRule } from '../scanner/normalize.js';
+import { isWcagRule, wcagFromTags } from '../scanner/normalize.js';
 import { impactOf, weightOf } from './weights.js';
 
 export const FORMULA_VERSION = 1;
@@ -25,7 +25,14 @@ export function computeScore(raw, { includeAAA = false } = {}) {
   const rules = new Map();
   const add = (id, tags, key, n) => {
     if (!isWcagRule(tags)) return;
-    const r = rules.get(id) ?? { ruleId: id, impact: impactOf(id), weight: weightOf(id), pass: 0, fail: 0 };
+    const r = rules.get(id) ?? {
+      ruleId: id,
+      impact: impactOf(id),
+      weight: weightOf(id),
+      pass: 0,
+      fail: 0,
+      wcag: wcagFromTags(tags),
+    };
     r[key] += n;
     rules.set(id, r);
   };

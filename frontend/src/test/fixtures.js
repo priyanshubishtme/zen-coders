@@ -5,7 +5,7 @@ export const health = (overrides = {}) => ({
   version: '0.1.0',
   uptimeSec: 1,
   checks: { browser: 'up', store: 'memory', llm: 'off' },
-  limits: { maxHtmlBytes: 512_000, privateUrlsAllowed: false },
+  limits: { maxHtmlBytes: 5_000_000, privateUrlsAllowed: false },
   ...overrides,
 });
 

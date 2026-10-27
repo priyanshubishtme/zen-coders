@@ -159,6 +159,11 @@ export function scrollIssueIntoPane(id) {
   const row = document.getElementById(`issue-${id}`);
   if (!pane || !row) return;
   const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  if (pane.scrollHeight <= pane.clientHeight + 1) {
+    row.scrollIntoView?.({ block: 'nearest', behavior: still ? 'auto' : 'smooth' });
+    row.focus({ preventScroll: true });
+    return;
+  }
   const top = issueScrollTop(pane.getBoundingClientRect().top, row.getBoundingClientRect().top, pane.scrollTop);
   pane.scrollTo({ top, behavior: still ? 'auto' : 'smooth' });
   row.focus({ preventScroll: true });

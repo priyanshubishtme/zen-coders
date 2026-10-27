@@ -21,10 +21,12 @@
 
 | Screen    | Route               | Phase | Purpose                                                          |
 | --------- | ------------------- | ----- | ---------------------------------------------------------------- |
-| Workspace | `/`                 | 1–4   | Landing pitch + USP + self-scan proof, then paste/scan/fix. Efficiency panel on results. |
-| Report    | `/scans/:id/report` | 4     | Read-only shareable report. Anyone with the link can view; expires ~30 days. |
+| Workspace | `/`                 | 1–B   | Landing pitch + paste, upload HTML+CSS, or URL/crawl, then results (preview, issues, checks, colors, patched HTML). |
+| Sign in   | `/login`, `/signup` | B     | Real session auth (HttpOnly cookie + CSRF). Crawls and login-state scans need an account. |
+| Projects  | `/projects`         | B     | Saved scans for the signed-in account.                           |
+| Report    | `/scans/:id/report` | 4     | Shareable report with remaining/resolved/manual **and** the Checks table. Expires ~30 days. |
 | History   | `/history`          | 4     | This browser’s scans + score trend (Recharts + data table)       |
-| Business  | `/business`         | 4     | Content from doc 02                                              |
+| Business  | `/business`         | 4–B   | Plans, live limits, and the commands that turn quotas and Pro on. |
 
 ### Workspace layout
 

@@ -43,7 +43,7 @@ const STATUSES = {
     Icon: Info,
     className: 'border-border text-muted-foreground',
   },
-  proposed: { label: 'Proposed', Icon: Sparkles, className: 'text-primary border-primary' },
+  proposed: { label: 'Proposed', Icon: Sparkles, className: 'text-link border-primary' },
 };
 
 const CONFIDENCE = { high: 'High', medium: 'Medium', low: 'Low' };
@@ -51,7 +51,7 @@ const CONFIDENCE = { high: 'High', medium: 'Medium', low: 'Low' };
 const AI_REVIEW = {
   label: 'AI draft, needs review',
   Icon: Sparkles,
-  className: 'text-primary border-primary',
+  className: 'text-link border-primary',
 };
 
 /**

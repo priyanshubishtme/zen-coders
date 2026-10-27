@@ -33,7 +33,7 @@ export function SeverityFilter({ counts, selected, onChange }) {
         <button
           type="button"
           onClick={() => onChange([])}
-          className="min-h-9 px-2 text-sm text-primary underline"
+          className="min-h-9 px-2 text-sm text-link underline"
         >
           Show all
         </button>

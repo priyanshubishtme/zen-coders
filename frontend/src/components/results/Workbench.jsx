@@ -28,12 +28,12 @@ export function Workbench({ scan, highlightIds = [], onSelect, filter = null }) 
   const hasAfter = Boolean(scan.shots?.after) && !broken.after;
 
   return (
-    <section id="preview" aria-labelledby="workbench-heading" className="rounded-lg border bg-background p-4">
+    <section id="preview" aria-labelledby="workbench-heading" className="rounded-xl border bg-surface p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="workbench-heading" className="text-lg font-semibold">
           Page preview
         </h2>
-        <div role="group" aria-label="Compare before and after" className="flex rounded-md border">
+        <div role="group" aria-label="Compare before and after" className="flex rounded-md border bg-background p-0.5">
           {[
             ['side', 'Side by side'],
             ['slider', 'Slider'],
@@ -43,8 +43,8 @@ export function Workbench({ scan, highlightIds = [], onSelect, filter = null }) 
               type="button"
               aria-pressed={layout === id}
               disabled={!hasAfter && id === 'slider'}
-              className={`min-h-10 px-3 text-sm ${
-                layout === id ? 'bg-primary text-primary-foreground' : 'text-foreground'
+              className={`min-h-9 rounded-[5px] px-3 text-sm disabled:opacity-50 ${
+                layout === id ? 'bg-raised font-semibold text-foreground' : 'text-muted-foreground'
               }`}
               onClick={() => setLayout(id)}
             >
@@ -58,7 +58,7 @@ export function Workbench({ scan, highlightIds = [], onSelect, filter = null }) 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <button
           type="button"
-          className="min-h-10 rounded-md border px-3 text-sm"
+          className="min-h-10 rounded-md border bg-background px-3 text-sm hover:bg-raised"
           aria-pressed={showMarks}
           onClick={() => setShowMarks((value) => !value)}
         >
@@ -184,11 +184,12 @@ function Shot({ src, alt, filter, items = [], highlightIds = [], onSelect = () =
 export function CodeDisclosure({ scanId, patchedHtml }) {
   const [showCode, setShowCode] = useState(false);
   return (
-    <div id="code" className="rounded-lg border bg-background p-4">
-      <h2 className="text-lg font-semibold">Code</h2>
+    <div className="rounded-lg border bg-background p-4">
+      <h3 className="text-sm font-semibold">Original and patched, side by side</h3>
+      <p className="mt-1 text-sm text-muted-foreground">The code editor loads only when you open it.</p>
       <button
         type="button"
-        className="mt-2 min-h-10 rounded-md border px-3 text-sm"
+        className="mt-3 min-h-10 rounded-md border px-3 text-sm hover:bg-raised"
         aria-expanded={showCode}
         onClick={() => setShowCode(true)}
       >

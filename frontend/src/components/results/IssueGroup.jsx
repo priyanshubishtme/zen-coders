@@ -209,7 +209,7 @@ export function IssueGroup({
           if (node && highlighted) node.open = true;
         }}
       >
-        <summary className="min-h-10 cursor-pointer text-sm font-medium text-primary">Details</summary>
+        <summary className="min-h-10 cursor-pointer text-sm font-medium text-link">Details</summary>
         <div className="mt-2">
           <div className="mt-2">
             <WcagChips refs={first.wcag.refs} />
@@ -220,7 +220,7 @@ export function IssueGroup({
               href={first.helpUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-2 inline-flex min-h-10 items-center gap-1 text-sm text-primary underline"
+              className="mt-2 inline-flex min-h-10 items-center gap-1 text-sm text-link underline"
             >
               Rule reference: {first.ruleId}
               <ExternalLink aria-hidden="true" className="size-3" />

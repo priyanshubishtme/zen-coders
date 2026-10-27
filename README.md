@@ -44,6 +44,71 @@ the UI shows a warning badge while it is on.
 | `npm run build`                   | Production build of the frontend                                             |
 | `npm run browsers:install`        | Download Playwright Chromium                                                 |
 
+## How a scan works
+
+```mermaid
+flowchart LR
+  UI["React UI<br/>paste / upload / URL / crawl"] -->|REST JSON + cookie| API["Express API"]
+  API --> ORCH["Orchestrator"]
+  ORCH --> SCAN["Playwright Chromium<br/>axe-core + keyboard Tab walk"]
+  SCAN --> SCORE["Pure scorer"]
+  ORCH --> REPAIR["Deterministic fixers<br/>then optional LLM drafts"]
+  ORCH --> VERIFY["Apply to a copy → re-scan"]
+  VERIFY --> SCAN
+  ORCH --> STORE[("memory or MongoDB")]
+```
+
+1. **Input.** Paste HTML, upload an `.html` file plus `.css` files (the browser inlines the CSS, then the 5 MB cap applies), or scan a public URL. Signed-in accounts can crawl one host (breadth-first, robots.txt, default 10 pages / depth 2 while quotas are off).
+2. **Render.** Isolated Chromium. Public stylesheets and images load; private addresses are blocked. A Tab walk (up to 50 stops) is recorded as hints, not axe violations.
+3. **Check.** axe-core WCAG 2.2 A/AA plus our heading/keyboard checks. Results include failed rules, passed rules (for the Checks table), and “check by hand” items. Color-contrast evidence is stored only when both colors were measured.
+4. **Explain.** Each issue card says what is broken, who it affects, why it matters, and how we fix it. Marks on the screenshot stay in reading order.
+5. **Repair.** Suggest fixes runs deterministic patches first. The LLM, if on, only drafts wording. Nothing is applied until you accept drafts and click Apply verified fixes.
+6. **Verify.** The patched copy is re-scanned. A fix is verified only if that issue is gone and nothing else broke. Then you can copy or download the patched HTML, or a ZIP of original + patched pages (up to 20 MB).
+
+The score is automated checks only. It is not a WCAG conformance claim.
+
+## Accounts, plans and quotas
+
+Auth is real: `POST /signup` (201) and `POST /login` (200) set an HttpOnly `accessfix.sid` cookie. Mutating calls send `x-accessfix-request: 1`. There is no password reset.
+
+| | Signed out | Free | Pro |
+| --- | --- | --- | --- |
+| Scans / UTC day | 100 | 30 | 300 |
+| Pages / day | — | 100 | 1,000 |
+| AI tokens / day | — | 50,000 | 300,000 |
+| Pages / crawl | — | 5 when quotas on, else `CRAWL_MAX_PAGES` (10) | 10 when quotas on, else 10 |
+
+Quotas are **off** unless `QUOTAS_ENABLED=true`. Commands (also listed on `/business`):
+
+```bash
+# .env — turn limits on
+QUOTAS_ENABLED=true
+
+# .env — these emails become Pro on the next sign-in (works with the memory store)
+PRO_EMAILS=owner@example.com
+
+# Mongo only — change an existing account
+npm run plan:pro -- user@example.com pro
+npm run plan:pro -- user@example.com free
+```
+
+## Persistence and the LLM
+
+```bash
+# Mongo (optional). Default STORE=memory is wiped when the API restarts.
+docker compose up -d mongo
+# .env
+STORE=mongo
+MONGODB_URI=mongodb://127.0.0.1:27017/accessfix
+
+# LLM (optional). Off = rule-based fixes still work.
+LLM_PROVIDER=openai-compatible
+LLM_API_KEY=...
+LLM_MODEL_CHEAP=...
+```
+
+Leave `REDIS_URL` empty. Leave `QUOTAS_ENABLED` false unless you want the table above enforced. `ALLOW_PRIVATE_URLS=true` is dev-only (the API refuses it in production).
+
 ## Layout
 
 ```
@@ -90,11 +155,4 @@ the UI shows a warning badge while it is on.
 The score covers automated checks only. It is not a WCAG conformance claim. See
 [docs/06-scoring-spec.md](docs/06-scoring-spec.md).
 
-Optional Mongo (not required for `npm run dev` or `npm test`):
-
-```bash
-docker compose up -d mongo
-# then STORE=mongo and MONGODB_URI=mongodb://127.0.0.1:27017/accessfix in .env
-```
-
-See [docs/10-deploy.md](docs/10-deploy.md) and [docs/11-demo-script.md](docs/11-demo-script.md).
+See [docs/03-architecture.md](docs/03-architecture.md), [docs/10-deploy.md](docs/10-deploy.md), [docs/11-demo-script.md](docs/11-demo-script.md), and [docs/12-phase-b.md](docs/12-phase-b.md).

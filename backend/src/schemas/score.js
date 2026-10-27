@@ -18,7 +18,21 @@ export const Score = z.object({
   byImpact: z.object({ critical: bucket, serious: bucket, moderate: bucket, minor: bucket }),
   /** Every scored rule, so the UI can show the formula with real numbers. */
   rules: z.array(
-    z.object({ ruleId: z.string(), impact: Impact, weight: count, pass: count, fail: count }),
+    z.object({
+      ruleId: z.string(),
+      impact: Impact,
+      weight: count,
+      pass: count,
+      fail: count,
+      /** Display only. Older stored scans do not have it. */
+      wcag: z
+        .object({
+          criteria: z.array(z.string()),
+          level: z.string().nullable(),
+          refs: z.array(z.object({ sc: z.string(), name: z.string(), level: z.string().nullable(), url: z.string() })),
+        })
+        .optional(),
+    }),
   ),
   /** Kept out of the score on purpose. */
   manualReviewCount: count,
