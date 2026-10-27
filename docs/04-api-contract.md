@@ -39,6 +39,30 @@ clients can integrate against the real error behaviour today.
 Rate limits: every route shares a per-IP limit (`RATE_LIMIT_RPM`, default 300/min, enough for
 polling). `POST` routes also have a stricter per-IP limit (`SCAN_RATE_LIMIT_RPM`, default 10/min).
 Both return standard draft-8 `RateLimit` headers; the UI reads `t=` for its countdown.
+`SCAN_RATE_LIMIT_RPM` defaults to 30.
+
+### Phase B routes
+
+A scan started while signed in is private. Someone else's id is `404` with the same body as a
+missing scan. A signed-out paste is still a capability link. State-changing requests that carry
+the `accessfix.sid` cookie must send `x-accessfix-request: 1`.
+
+| Method | Path | Purpose | Success |
+| --- | --- | --- | --- |
+| `POST` | `/signup` | Create an account and a session. | `201` `{ user }` |
+| `POST` | `/login` | Open a session. Wrong password and unknown email share one message. | `200` `{ user }` |
+| `POST` | `/logout` | Drop the session. | `204` |
+| `GET` | `/me` | Email, plan, projects, scan ids. | `200` |
+| `POST` | `/scans/:id/cancel` | Abort the page in progress. Finished pages are kept. | `202` |
+| `POST` | `/scans/:id/share` | Read-only token. Refused for an authenticated scan. | `201` `{ url }` |
+| `DELETE` | `/shares/:token` | Revoke. | `204` |
+| `GET` | `/shares/:token` | The report only. No source, repairs, apply, or cancel. `Cache-Control: no-store`. | `200` |
+| `GET` | `/scans/:id/pages.zip` | Uncompressed zip, `page-01.html` plus `manifest.json`. `413` over 20 MB. | `200` |
+
+`POST /scans` may also send `options.crawl`, `options.waitFor`, and `auth` (`storageState` or
+`cookies`). Crawl requires a session. `GET /health` adds `quotas` (`on` or `off`),
+`tokenCeiling` (`ok` or `reached`), and `authenticatedScanning` (`on` or `disabled: no key`).
+Full limits: [12-phase-b.md](12-phase-b.md).
 
 ## Requests
 

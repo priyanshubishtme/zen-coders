@@ -235,6 +235,8 @@ export function mockApi({
       if (verify instanceof Error) return Promise.reject(verify);
       return typeof verify?.ok === 'boolean' ? verify : reply(200, verify);
     }
+    if (path === '/me') return reply(401, { error: { code: 'AUTH_REQUIRED', message: 'Sign in to continue.' } });
+    if (path.endsWith('/events')) return reply(200, {});
     if (path.startsWith('/scans/')) {
       const body = scans[Math.min(i++, scans.length - 1)];
       return reply(200, body);

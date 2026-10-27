@@ -18,9 +18,49 @@ export const ListScansQuery = z.object({
     .pipe(z.array(Id).min(1).max(50)),
 });
 
+export const AuthBody = z
+  .object({
+    storageState: z.record(z.string(), z.unknown()).optional(),
+    cookies: z
+      .array(
+        z.object({
+          name: z.string().min(1).max(200),
+          value: z.string().min(1).max(4096),
+          domain: z.string().max(253).optional(),
+          path: z.string().max(200).optional(),
+        }),
+      )
+      .max(50)
+      .optional(),
+  })
+  .refine((value) => value.storageState || value.cookies?.length, {
+    message: 'Provide storageState or cookies.',
+  });
+
 export const CreateScanBody = z.object({
   input: ScanInput,
   options: ScanOptions,
+  auth: AuthBody.optional(),
+});
+
+export const SignupBody = z.object({
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(200)
+    .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Enter a valid email.'),
+  password: z.string().min(10).max(200),
+});
+
+export const ShareBody = z
+  .object({
+    expiresAt: z.iso.datetime().optional(),
+  })
+  .default({});
+
+export const ShareParams = z.object({
+  token: z.string().regex(/^[A-Za-z0-9_-]{20,80}$/),
 });
 
 export const CreateRepairsBody = z
@@ -84,6 +124,9 @@ export const HealthResponse = z.object({
     store: z.enum(['memory', 'mongo']),
     llm: z.enum(['off', 'on', 'circuit-open']),
   }),
+  quotas: z.enum(['on', 'off']),
+  tokenCeiling: z.enum(['ok', 'reached']),
+  authenticatedScanning: z.enum(['on', 'disabled: no key']),
   limits: z.object({
     maxHtmlBytes: z.number().int().positive(),
     /** true only in dev/test; the UI shows a warning badge. */

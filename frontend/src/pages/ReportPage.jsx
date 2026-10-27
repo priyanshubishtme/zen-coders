@@ -1,21 +1,20 @@
 import { useEffect, useState } from 'react';
-import { API_BASE_URL, getReport } from '@/lib/api.js';
+import { API_BASE_URL, getReport, getShare } from '@/lib/api.js';
 import { Link } from '@/lib/Link.jsx';
 import { formatScore } from '@/lib/score.js';
 import { Alert } from '@/components/ui/alert.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Info } from 'lucide-react';
 
-export function ReportPage({ id }) {
+export function ReportPage({ id, shareToken }) {
   const [report, setReport] = useState(null);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    getReport(id, 'json')
-      .then(setReport)
-      .catch(setError);
-  }, [id]);
+    const load = shareToken ? getShare(shareToken) : getReport(id, 'json');
+    load.then(setReport).catch(setError);
+  }, [id, shareToken]);
 
   const share = async () => {
     try {
@@ -48,6 +47,7 @@ export function ReportPage({ id }) {
         Anyone with this link can view the report. Shared links expire after about 30 days.
       </Alert>
       <p className="mt-4 text-sm text-muted-foreground">{report.disclaimer}</p>
+      {report.screenshotsNote && <p className="mt-2 text-sm">{report.screenshotsNote}</p>}
       <p className="mt-4 text-3xl font-semibold">
         {formatScore(report.before?.value)} → {formatScore(report.after?.value ?? report.score?.value)}
       </p>
@@ -55,15 +55,19 @@ export function ReportPage({ id }) {
         <Button variant="outline" onClick={share}>
           {copied ? 'Link copied' : 'Copy share link'}
         </Button>
-        <a className="inline-flex min-h-10 items-center text-sm text-primary underline" href={htmlUrl}>
-          Download HTML
-        </a>
-        <a className="inline-flex min-h-10 items-center text-sm text-primary underline" href={jsonUrl}>
-          Download JSON
-        </a>
-        <a className="inline-flex min-h-10 items-center text-sm text-primary underline" href={mdUrl}>
-          Download Markdown
-        </a>
+        {!shareToken && (
+          <>
+            <a className="inline-flex min-h-10 items-center text-sm text-primary underline" href={htmlUrl}>
+              Download HTML
+            </a>
+            <a className="inline-flex min-h-10 items-center text-sm text-primary underline" href={jsonUrl}>
+              Download JSON
+            </a>
+            <a className="inline-flex min-h-10 items-center text-sm text-primary underline" href={mdUrl}>
+              Download Markdown
+            </a>
+          </>
+        )}
       </div>
       <section className="mt-8" aria-labelledby="resolved-h">
         <h2 id="resolved-h" className="text-lg font-semibold">

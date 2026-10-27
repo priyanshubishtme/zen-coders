@@ -4,6 +4,8 @@
  */
 export const ErrorCodes = Object.freeze({
   VALIDATION_ERROR: 400,
+  AUTH_REQUIRED: 401,
+  CSRF: 403,
   NOT_FOUND: 404,
   SCAN_NOT_READY: 409,
   SOURCE_EXPIRED: 410,

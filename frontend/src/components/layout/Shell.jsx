@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ShieldAlert, ShieldCheck } from 'lucide-react';
 import { ApiStatus } from '@/components/ApiStatus.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
+import { getMe, logout } from '@/lib/api.js';
 import { Link } from '@/lib/Link.jsx';
 import { saveTheme } from '@/lib/theme.js';
 
 const NAV = [
   { href: '/', label: 'Scan' },
+  { href: '/projects', label: 'Projects' },
   { href: '/history', label: 'History' },
   { href: '/business', label: 'Business' },
 ];
@@ -15,6 +17,16 @@ const NAV = [
  * @param {{ healthState: string, health: object | null, path: string, children: import('react').ReactNode }} props
  */
 export function Shell({ healthState, health, path, children }) {
+  const [email, setEmail] = useState(null);
+  useEffect(() => {
+    let active = true;
+    getMe()
+      .then((me) => active && setEmail(me.email))
+      .catch(() => active && setEmail(null));
+    return () => {
+      active = false;
+    };
+  }, [path]);
   return (
     <>
       <a
@@ -54,6 +66,19 @@ export function Shell({ healthState, health, path, children }) {
                 <ShieldAlert aria-hidden="true" className="size-3.5" />
                 Private network scanning enabled (dev only)
               </Badge>
+            )}
+            {email ? (
+              <button
+                type="button"
+                className="min-h-10 text-sm text-muted-foreground"
+                onClick={() => logout().then(() => setEmail(null))}
+              >
+                Sign out {email}
+              </button>
+            ) : (
+              <Link href="/login" className="min-h-10 inline-flex items-center text-sm text-muted-foreground">
+                Sign in
+              </Link>
             )}
             <ThemeControl />
             <ApiStatus state={healthState} />

@@ -78,6 +78,19 @@ export async function installNetworkGuard(context, opts) {
 
     if (opts.replay) return replay(route, req, isMain);
 
+    if (opts.pinnedHost && isMain) {
+      let host = '';
+      try {
+        host = new URL(req.url()).host;
+      } catch {
+        host = '';
+      }
+      if (host && host !== opts.pinnedHost) {
+        const err = new AppError('URL_BLOCKED', 'That redirect left the pinned host.');
+        return block(route, req, 'left the pinned host', true, err);
+      }
+    }
+
     if (isMain) {
       let hops = 0;
       for (let r = req.redirectedFrom(); r; r = r.redirectedFrom()) hops += 1;

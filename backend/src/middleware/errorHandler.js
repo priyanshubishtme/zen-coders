@@ -17,6 +17,7 @@ export function errorHandler(err, req, res, _next) {
     req.log?.error({ err }, 'unhandled error');
     appError = new AppError('INTERNAL', 'Something went wrong.');
   }
+  if (appError.details?.retryAfterSec) res.set('Retry-After', String(appError.details.retryAfterSec));
   res.status(appError.status).json({
     error: {
       code: appError.code,

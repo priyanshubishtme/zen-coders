@@ -175,4 +175,24 @@ reply all degrade to the template strategy. The repair carries the reason, and `
 | Multi-language              | Message catalog keyed by rule ID and locale; axe locales                                             | `Accept-Language`                                |
 | MongoDB                     | `repositories/mongoScanRepository.js` passing the shared contract tests                              | None                                             |
 
-See [09-roadmap-future.md](09-roadmap-future.md) for the pathway behind each row.
+See [09-roadmap-future.md](09-roadmap-future.md) for the pathway behind each row. The rows for
+SPA wait, auth-gated pages, keyboard, and multi-page crawl describe the original plan. Phase B
+shipped them differently: one scan holds many pages, keyboard checks are not axe violations,
+and the threat model is [12-phase-b.md](12-phase-b.md).
+
+## Phase B, as built
+
+The orchestrator picks a single page or `services/crawl`. A crawl is breadth-first on the host
+the seed URL lands on, one page at a time, with `robots.txt` and the same SSRF check on every
+discovered URL and every redirect. The clock starts when the job starts running. Time running
+out aborts the page in progress and stores it as skipped, never as a half result.
+
+Accounts live in a store next to the scan repository (`users`, `sessions`, `shares`, `secrets`,
+`counters`, `windows`, `projects`), memory or a second Mongo client. Ownership is checked on
+every scan route and a miss is a 404. Login state is AES-256-GCM, keyed per scan, and deleted
+when the job settles. The queue payload is the scan id. Redis plus BullMQ is optional and only
+legal with `STORE=mongo`; the worker stays in this process.
+
+`QUOTAS_ENABLED` defaults to false. Daily caps are off and the meters still increment. A
+process-wide token ceiling, per UTC day, is `0` (unlimited) unless set. With Mongo it survives
+a restart. `/health` reports `quotas` and `tokenCeiling`.

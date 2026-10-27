@@ -82,7 +82,12 @@ describe('contracts', () => {
 
   it('defaults scan options to AA with best practices as advisory', () => {
     const body = CreateScanBody.parse({ input: { type: 'html', html: '<p>x</p>' } });
-    expect(body.options).toEqual({ includeAAA: false, includeBestPractice: true });
+    expect(body.options).toEqual({
+      includeAAA: false,
+      includeBestPractice: true,
+      crawl: false,
+      keyboard: true,
+    });
   });
 
   it('only accepts http(s) URLs', () => {

@@ -7,6 +7,9 @@ import {
   ReportQuery,
   ScanIdParams,
   ScreenshotQuery,
+  ShareBody,
+  ShareParams,
+  SignupBody,
   VerifyBody,
 } from '../schemas/index.js';
 
@@ -20,6 +23,18 @@ export function createRouter(c, { scanLimiter }) {
 
   r.get('/health', c.health.get);
   r.get('/usage', c.usage.get);
+  r.post('/signup', validate({ body: SignupBody }), c.auth.signup);
+  r.post('/login', validate({ body: SignupBody }), c.auth.login);
+  r.post('/logout', c.auth.logout);
+  r.get('/me', c.auth.me);
+  r.get('/shares/:token', validate({ params: ShareParams }), c.auth.shareReport);
+  r.get('/shares/:token/events', validate({ params: ShareParams }), c.auth.shareEvents);
+  r.get(
+    '/shares/:token/screenshot',
+    validate({ params: ShareParams, query: ScreenshotQuery }),
+    c.auth.shareScreenshot,
+  );
+  r.delete('/shares/:token', validate({ params: ShareParams }), c.auth.revoke);
 
   r.post('/scans', scanLimiter, validate({ body: CreateScanBody }), c.scans.create);
   r.get('/scans', validate({ query: ListScansQuery }), c.scans.list);
@@ -37,6 +52,9 @@ export function createRouter(c, { scanLimiter }) {
     c.scans.verify,
   );
   r.get('/scans/:id/patched.html', validate({ params: ScanIdParams }), c.scans.patched);
+  r.get('/scans/:id/pages.zip', validate({ params: ScanIdParams }), c.scans.zip);
+  r.post('/scans/:id/cancel', validate({ params: ScanIdParams }), c.scans.cancel);
+  r.post('/scans/:id/share', validate({ params: ScanIdParams, body: ShareBody }), c.scans.share);
   r.get('/scans/:id/events', validate({ params: ScanIdParams }), c.scans.events);
   r.get(
     '/scans/:id/screenshot',

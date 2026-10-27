@@ -19,7 +19,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "browsers:install": "npx playwright install chromium"
+    "browsers:install": "npx playwright install chromium",
+    "plan:pro": "node --env-file-if-exists=.env backend/src/scripts/setPlan.js"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

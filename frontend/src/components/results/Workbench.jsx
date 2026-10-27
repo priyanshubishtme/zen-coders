@@ -144,7 +144,7 @@ export function Workbench({ scan, verification, activeId, onSelect }) {
         </p>
       )}
 
-      <Simulators marks={scan.marks ?? []} onFilter={onFilter} />
+      <Simulators marks={scan.marks ?? []} keyboard={scan.keyboard ?? []} onFilter={onFilter} />
       <LogPanel key={scan.id} scanId={scan.id} saved={scan.events ?? []} onEvent={onLog} />
 
       <div className="mt-4">

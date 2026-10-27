@@ -5,11 +5,11 @@ preview, and see a **verified** before/after score. Fix-first, no overlays, work
 
 Hackathon problem statement PS 11: "Web Accessibility Auditor + Fix-Suggester".
 
-> **Status: Phase A.** Paste HTML or a URL, get verified source fixes, optional AI drafts, a
-> shareable report, scan history, a `/business` page, and a results workbench (screenshot, pins,
-> before/after, live log). Memory store by default; Mongo when you set `STORE=mongo`. Screenshots
-> stay in memory for one hour. The full map is [`project.md`](project.md). Short specs live in
-> [`docs/`](docs/README.md).
+> **Status: Phase B.** Paste HTML or a URL, or crawl one host (signed in). Verified source fixes,
+> optional AI drafts, accounts, private scans, share links, and the results workbench. Quotas are
+> off unless `QUOTAS_ENABLED=true`. Memory store by default; Mongo when you set `STORE=mongo`.
+> The full map is [`project.md`](project.md). Crawl and auth limits are in
+> [`docs/12-phase-b.md`](docs/12-phase-b.md).
 
 ## Quick start
 

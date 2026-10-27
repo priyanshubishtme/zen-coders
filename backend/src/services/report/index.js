@@ -21,7 +21,7 @@ export function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (c) => ESC[c]);
 }
 
-export function buildReport({ scan, repairs, verification }) {
+export function buildReport({ scan, repairs, verification, screenshotsAvailable }) {
   return {
     scanId: scan.id,
     generatedAt: new Date().toISOString(),
@@ -41,6 +41,7 @@ export function buildReport({ scan, repairs, verification }) {
     verifiedAt: verification?.verifiedAt ?? null,
     disclaimer: SCORE_DISCLAIMER,
     expiresNote: 'Anyone with this link can view the report. Shared links expire after 30 days.',
+    screenshotsNote: screenshotsAvailable === false ? 'Screenshots for this scan have expired.' : '',
   };
 }
 
@@ -82,6 +83,7 @@ export function reportToHtml(report) {
 <body>
 <h1>AccessFix report</h1>
 <p class="note">${escapeHtml(report.expiresNote)}</p>
+${report.screenshotsNote ? `<p class="note">${escapeHtml(report.screenshotsNote)}</p>` : ''}
 <p class="note">${escapeHtml(report.disclaimer)}</p>
 <table>
   <tr><th>Scan</th><td><code>${escapeHtml(report.scanId)}</code></td></tr>
@@ -115,6 +117,7 @@ export function reportToMarkdown(report) {
   return `# AccessFix report
 
 ${report.expiresNote}
+${report.screenshotsNote ?? ''}
 
 ${report.disclaimer}
 

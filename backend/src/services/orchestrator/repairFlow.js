@@ -10,6 +10,7 @@ import {
   toPublicRepair,
 } from '../repair/index.js';
 import { buildLlmTasks, isSafeDraft, naiveEstimateTokens } from '../llm/index.js';
+import { noteBudget, proposeAcrossPages, verifyPages } from '../repair/site.js';
 import { normalize } from '../scanner/normalize.js';
 import { computeScore } from '../scorer/index.js';
 import { compare, subset } from '../verifier/compare.js';
@@ -31,7 +32,9 @@ async function load(repo, sourceCache, scanId) {
   if (!cached?.source) {
     throw new AppError(
       'SOURCE_EXPIRED',
-      'The scanned page is kept for one hour only and has expired. Scan it again to get fixes.',
+      scan.authUsed
+        ? 'This authenticated scan expired 15 minutes after it finished. Scan it again to apply fixes.'
+        : 'The scanned page is kept for one hour only and has expired. Scan it again to get fixes.',
     );
   }
   return { scan, cached };
@@ -66,10 +69,58 @@ const tally = (repairs, scansRun) => ({
 export function createRepairFlow({ repo, sourceCache, verifier, logger, emptyTokens, llm, config, onEvent }) {
   return {
     /** Propose one repair per issue and verify every automatic one in an offline re-scan. */
-    async proposeRepairs(scanId, { violationIds, useLlm = true }, { ip = 'local' } = {}) {
+    async proposeRepairs(scanId, { violationIds, useLlm = true }, { ip = 'local', plan } = {}) {
       const started = Date.now();
       onEvent?.(scanId, 'patch', 'Building repairs');
       const { scan, cached } = await load(repo, sourceCache, scanId);
+      if (!violationIds && scan.pages?.some((p) => p.status === 'completed' && p.cacheIndex != null)) {
+        const site = await proposeAcrossPages({
+          scan,
+          sourceCache,
+          buildTasks: buildLlmTasks,
+          complete: (tasks, opts) =>
+            llm.complete(tasks, { ...opts, scanBudget: config?.LLM_TOKEN_BUDGET_PER_SCAN, plan }),
+          verify: (input) => verifier.verify(input),
+          applyDraft: applyLlmDraft,
+          useLlm,
+          llm,
+          ip,
+          plan,
+          model: config?.LLM_MODEL_CHEAP || 'default',
+        });
+        await repo.saveRepairs(scanId, site.repairs);
+        const summary = tally(site.repairs, site.scansRun);
+        const naive = naiveEstimateTokens(site.repairs);
+        const used = site.llmRes?.usage?.totalTokens ?? 0;
+        const tokenUsage = site.llmRes
+          ? {
+              provider: llm.name,
+              model: site.llmRes.model ?? null,
+              calls: site.llmRes.usage.calls,
+              promptTokens: site.llmRes.usage.promptTokens,
+              completionTokens: site.llmRes.usage.completionTokens,
+              totalTokens: used,
+              cacheHits: site.llmRes.cacheHits,
+              estimatedCostUsd: site.llmRes.usage.estimatedCostUsd,
+              budget: config?.LLM_TOKEN_BUDGET_PER_SCAN ?? 0,
+              budgetExhausted: site.llmRes.budgetExhausted,
+              deterministicFixes: site.repairs.filter((r) => r.strategy === 'deterministic').length,
+              dedupedItems: site.llmRes.dedupedItems,
+              naiveEstimateTokens: naive,
+              tokensSaved: Math.max(0, naive - used),
+              tokensPerVerifiedFix: summary.verified ? used / summary.verified : null,
+            }
+          : {
+              ...emptyTokens(),
+              deterministicFixes: site.repairs.filter((r) => r.strategy === 'deterministic').length,
+              naiveEstimateTokens: naive,
+              tokensSaved: naive,
+              tokensPerVerifiedFix: summary.verified ? 0 : null,
+            };
+        await repo.updateScan(scanId, { tokenUsage });
+        onEvent?.(scanId, 'patch', `${summary.verified} verified before apply`, Date.now() - started);
+        return { scanId, repairs: site.repairs.map(toPublicRepair), summary, tokenUsage, patterns: site.patterns };
+      }
       const pool = [...scan.violations, ...scan.advisory];
       const wanted = violationIds ? pool.filter((v) => violationIds.includes(v.id)) : pool;
       const proposed = proposeRepairs({ scan, source: cached.source, violations: wanted });
@@ -83,13 +134,16 @@ export function createRepairFlow({ repo, sourceCache, verifier, logger, emptyTok
         const tasks = buildLlmTasks(updated, { ctx, cached, model });
         llmRes = await llm.complete(tasks, {
           ip,
+          ownerId: scan.ownerId,
+          plan,
           scanBudget: config?.LLM_TOKEN_BUDGET_PER_SCAN,
         });
         updated = updated.map((r) => {
           const task = tasks.find((t) => t.repairIds.includes(r.id));
           const out = task && llmRes.results.get(task.key);
-          if (!out?.text) return r;
-          return applyLlmDraft(r, out.text, out.confidence, { scan, source: cached.source });
+          const noted = noteBudget(r, out);
+          if (!out?.text) return noted;
+          return applyLlmDraft(noted, out.text, out.confidence, { scan, source: cached.source });
         });
       }
 
@@ -199,7 +253,10 @@ export function createRepairFlow({ repo, sourceCache, verifier, logger, emptyTok
             });
             continue;
           }
-          r = fillPlaceholder(r, next, { scan, source: cached.source });
+          const page = (scan.pages ?? []).find((item) => item.url === r.pageUrl);
+          const pageSource =
+            page?.cacheIndex != null ? sourceCache.get(`${scanId}#${page.cacheIndex}`)?.source : cached.source;
+          r = fillPlaceholder(r, next, { scan, source: pageSource || cached.source });
           byId.set(id, r);
         }
         const hasTodo =
@@ -212,7 +269,20 @@ export function createRepairFlow({ repo, sourceCache, verifier, logger, emptyTok
         candidates.push(r);
       }
 
-      const result = await verifier.verify({ scan, cached, repairs: candidates });
+      const multi = scan.pages?.some((p) => p.status === 'completed' && p.cacheIndex != null);
+      const pageGroups = multi
+        ? await verifyPages({ scan, sourceCache, candidates, verify: (input) => verifier.verify(input) })
+        : [];
+      const result = pageGroups.length
+        ? {
+            outcomes: new Map(pageGroups.flatMap((group) => [...group.result.outcomes])),
+            baselineRaw: pageGroups[0].result.baselineRaw,
+            afterRaw: pageGroups[pageGroups.length - 1].result.afterRaw,
+            scansRun: pageGroups.reduce((n, group) => n + group.result.scansRun, 0),
+            patchedHtml: pageGroups[0].result.patchedHtml,
+            pageFiles: pageGroups.map((group) => ({ url: group.url, html: group.result.patchedHtml })),
+          }
+        : await verifier.verify({ scan, cached, repairs: candidates });
       const outcomes = new Map([...result.outcomes, ...skipped]);
       const d = compare(result.baselineRaw, result.afterRaw);
       const bucketsOf = (raw, items) =>
@@ -232,6 +302,7 @@ export function createRepairFlow({ repo, sourceCache, verifier, logger, emptyTok
         before: computeScore(result.baselineRaw, scan.options),
         after: computeScore(result.afterRaw, scan.options),
         patchedHtml: result.patchedHtml,
+        pageFiles: result.pageFiles ?? [],
         scansRun: result.scansRun,
         durationMs: Date.now() - started,
         verifiedAt: new Date().toISOString(),

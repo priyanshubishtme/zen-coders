@@ -18,7 +18,7 @@ const VIEWS = [
  * @param {{ marks: { violationId: string, name: string, role: string, n: number | null }[],
  *   onFilter: (filter: string | null) => void }} props
  */
-export function Simulators({ marks, onFilter }) {
+export function Simulators({ marks, onFilter, keyboard = [] }) {
   const [view, setView] = useState('none');
   const filterId = useId().replace(/:/g, '');
   const filter = view === 'none' ? null : `url(#${filterId}-${view})`;
@@ -68,9 +68,19 @@ export function Simulators({ marks, onFilter }) {
         </ul>
       )}
       <h3 className="mt-4 text-sm font-semibold">Keyboard</h3>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Focus order was not captured. This phase does not press Tab.
-      </p>
+      {keyboard.length === 0 ? (
+        <p className="mt-1 text-sm text-muted-foreground">
+          Focus order was not captured. This phase does not press Tab.
+        </p>
+      ) : (
+        <ul className="mt-1 list-disc pl-5 text-sm">
+          {keyboard.map((check) => (
+            <li key={`${check.url ?? ''}-${check.id}`}>
+              {check.message} <span className="text-muted-foreground">({check.confidence} confidence)</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button.jsx';
 import { ErrorPanel } from '@/components/ErrorPanel.jsx';
 import { useRepairs } from '@/hooks/useRepairs.js';
 import { useSeverityParam } from '@/hooks/useSeverityParam.js';
-import { getScan } from '@/lib/api.js';
+import { getScan, pagesZipUrl } from '@/lib/api.js';
 import { Link } from '@/lib/Link.jsx';
 import { visualOn } from '@/lib/flags.js';
 import { SCORE_DISCLAIMER, applicableRepairs } from '@/lib/score.js';
@@ -253,6 +253,52 @@ export function Results({ scan, health = null }) {
   return (
     <div>
       <ScoreCard scan={scan} verification={repairs.verification} headingRef={headingRef} />
+
+      {scan.partial && (
+        <Alert tone="info" className="mt-4" role="status">
+          This crawl stopped early. Finished pages kept their score. Apply works on those pages.
+        </Alert>
+      )}
+      {scan.pinnedHost && (
+        <p className="mt-3 text-sm">
+          Crawl pinned to <span className="font-mono">{scan.pinnedHost}</span>.
+        </p>
+      )}
+      {scan.renderWarning && <p className="mt-2 text-sm">{scan.renderWarning}</p>}
+      {scan.pages?.length > 0 && (
+        <section className="mt-4" aria-labelledby="pages-heading">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 id="pages-heading" className="text-sm font-semibold">
+              Pages
+            </h3>
+            <a className="min-h-10 inline-flex items-center text-sm text-primary underline" href={pagesZipUrl(scan.id)}>
+              Download pages
+            </a>
+          </div>
+          <ul className="mt-2 divide-y rounded-lg border">
+            {scan.pages.map((page) => (
+              <li key={`${page.depth}-${page.url}`} className="px-3 py-2 text-sm">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="font-mono">{page.url}</span>
+                  <span>{page.status === 'completed' ? `Score ${page.score?.value ?? 'N/A'}` : page.reason}</span>
+                </div>
+                {page.status === 'completed' && (
+                  <details className="mt-1">
+                    <summary className="min-h-10 cursor-pointer">
+                      {(page.violations ?? []).length} issues on this page
+                    </summary>
+                    <ul className="list-disc pl-5">
+                      {(page.violations ?? []).map((item) => (
+                        <li key={item.id}>{item.title}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <FixBar
         scan={scan}

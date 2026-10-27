@@ -1,27 +1,27 @@
 /**
- * Scanner strategies. Only `singlePage` is implemented. The rest are extension
- * points documented in docs/09-roadmap-future.md — do not call them.
+ * Scanner strategies. They compose: the orchestrator picks from the scan options.
+ * Keyboard checks are not axe violations and do not change the score.
  */
 export const SCANNER_STRATEGIES = Object.freeze({
-  singlePage: { status: 'live', notes: 'Paste HTML or one URL. Network idle, then axe.' },
+  singlePage: { status: 'live', notes: 'Paste HTML or one URL. Network idle, DOM quiet, then axe.' },
   crawler: {
-    status: 'stub',
-    plugIn: 'services/crawler producing a same-origin URL list into the orchestrator',
-    contract: 'additive /sites endpoints',
+    status: 'live',
+    plugIn: 'services/crawl breadth-first, one host, robots.txt, time budget',
+    contract: 'ScanOptions.crawl. One scan, many pages, streamed as each finishes.',
   },
   spaHydration: {
-    status: 'stub',
-    plugIn: 'ready strategy: load → network idle → mutation quiet → optional waitFor',
-    contract: 'ScanOptions.waitFor',
+    status: 'live',
+    plugIn: 'load, network idle, DOM quiet, optional CSS selector',
+    contract: 'ScanOptions.waitFor. A missing selector is a warning.',
   },
   authCookie: {
-    status: 'stub',
-    plugIn: 'per-scan Playwright storageState, never logged, short TTL',
-    contract: 'ScanOptions.auth',
+    status: 'live',
+    plugIn: 'per-scan AES-256-GCM storage state, scan id only on the queue',
+    contract: 'CreateScanBody.auth. Deleted after the last attempt.',
   },
   keyboardFocus: {
-    status: 'stub',
-    plugIn: 'scanner/checks/focus-*.js driving Tab and recording traps / missing outlines',
-    contract: 'new accessfix rule ids mapped to 2.1.1 / 2.1.2 / 2.4.3 / 2.4.7 / 2.4.11',
+    status: 'live',
+    plugIn: 'scanner/keyboard.js Tab walk, capped',
+    contract: 'scan.keyboard checks with confidence. Not axe violations.',
   },
 });

@@ -15,6 +15,7 @@ Start here. Read in order; each doc is short.
 | 09  | [Roadmap and future pathways](09-roadmap-future.md) | How each hard problem plugs in later                        |
 | 10  | [Deploy](10-deploy.md)                              | Static UI + Chromium API, Mongo, Docker                     |
 | 11  | [Demo script](11-demo-script.md)                    | Three-minute walkthrough                                    |
+| 12  | [Phase B: crawl, accounts, quotas](12-phase-b.md)   | What shipped, and the threat model for it                   |
 
 ## Decisions locked in Phase 0
 
@@ -39,13 +40,14 @@ Start here. Read in order; each doc is short.
 | 2     | Repairs (deterministic first), verification by re-scan, score, before/after view                                                                                                        | Verified fixes raise the score with zero regressions, LLM off                               | Done   |
 | 3     | LLM provider, token accounting, cache, batching, rate limiting                                                                                                                          | Tokens per verified fix shown; app still works with LLM off                                 | Done   |
 | 4     | Mongo adapter, jobs, report, `/business`, history + trend, self-scan proof, deploy notes                                                                                                 | Fresh clone runs with `npm run dev`; Mongo contract tests pass when a URI is set            | Done   |
+| B     | Crawl one host, accounts, private scans, share links, encrypted login state, quotas off by default                                                                                       | Signed-in crawl streams pages one by one; a share link cannot apply or cancel              | Done   |
 | 5     | Polish, PDF audit pack, GitHub Action, source mapping                                                                                                                                     | Out of this hackathon                                                                       |        |
 
 ## Deliberately out of scope (until the core loop works)
 
-- Auth, accounts, teams, billing.
+- Teams and billing. Accounts exist; there is no password reset and no email.
 - Multi-agent systems.
-- Multi-page crawling, SPA route discovery, auth-gated pages.
+- Sitemap-first crawling. A same-host breadth-first crawl is built (see [12-phase-b.md](12-phase-b.md)).
 - Mapping fixes back to framework source files (JSX, templates). We patch the HTML/CSS we were given.
 - Full ARIA widget semantics (menus, grids, comboboxes) and keyboard-trap detection.
 - Runtime overlays or injected widgets. Never, by principle.

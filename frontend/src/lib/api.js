@@ -46,7 +46,9 @@
  *   limits: { maxHtmlBytes: number, privateUrlsAllowed: boolean } }} Health
  */
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000';
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ??
+  (import.meta.env.MODE === 'test' ? 'http://localhost:4000' : '/api');
 
 export class ApiError extends Error {
   /**
@@ -78,9 +80,14 @@ async function request(path, { signal, ...init } = {}) {
   let res;
   try {
     res = await fetch(`${API_BASE_URL}${path}`, {
-      headers: { 'content-type': 'application/json' },
+      credentials: 'include',
       signal,
       ...init,
+      headers: {
+        'content-type': 'application/json',
+        'x-accessfix-request': '1',
+        ...(init.headers ?? {}),
+      },
     });
   } catch (err) {
     if (err?.name === 'AbortError') throw err;
@@ -95,8 +102,16 @@ async function request(path, { signal, ...init } = {}) {
 export const getHealth = () => request('/health');
 
 /** @returns {Promise<{ id: string, status: string, stage: Stage }>} */
-export const createScan = (input, signal) =>
-  request('/scans', { method: 'POST', body: JSON.stringify({ input }), signal });
+export const createScan = (payload, signal) => {
+  const body = payload?.input ? payload : { input: payload };
+  return request('/scans', { method: 'POST', body: JSON.stringify(body), signal });
+};
+
+export const signup = (body) => request('/signup', { method: 'POST', body: JSON.stringify(body) });
+export const login = (body) => request('/login', { method: 'POST', body: JSON.stringify(body) });
+export const logout = () => request('/logout', { method: 'POST', body: '{}' });
+export const getMe = () => request('/me');
+export const getShare = (token) => request(`/shares/${encodeURIComponent(token)}`);
 
 /** @returns {Promise<Scan>} */
 export const getScan = (id, signal) => request(`/scans/${encodeURIComponent(id)}`, { signal });
@@ -125,12 +140,15 @@ export const screenshotUrl = (id, which) =>
 
 export const eventsUrl = (id) => `${API_BASE_URL}/scans/${encodeURIComponent(id)}/events`;
 
+export const pagesZipUrl = (id) => `${API_BASE_URL}/scans/${encodeURIComponent(id)}/pages.zip`;
+
 /** Original HTML as text. 410 when the one-hour cache has expired. */
 export async function getSource(id, signal) {
   let res;
   try {
     res = await fetch(`${API_BASE_URL}/scans/${encodeURIComponent(id)}/source`, {
-      headers: { accept: 'text/plain' },
+      credentials: 'include',
+      headers: { accept: 'text/plain', 'x-accessfix-request': '1' },
       signal,
     });
   } catch (err) {

@@ -2,6 +2,8 @@ import { AxeBuilder } from '@axe-core/playwright';
 import { AppError } from '../../utils/errors.js';
 import { createBrowserPool } from './browserPool.js';
 import { resolveAxeTargets, runChecks } from './checks/index.js';
+import { waitForQuiet } from './hydrate.js';
+import { walkFocus } from './keyboard.js';
 import { installNetworkGuard } from './networkGuard.js';
 import { frameKey, mainSelector, rectToPin } from './pins.js';
 
@@ -125,7 +127,8 @@ export function createScanner(config, deps = {}) {
     });
   }
 
-  async function scan(input, options, { onStage = () => {}, replay } = {}) {
+  async function scan(input, options, hooks = {}) {
+    const { onStage = () => {}, replay, signal, storageState, waitFor, collectLinks, pinnedHost, timeoutMs } = hooks;
     return pool.withContext(
       async (context) => {
         const page = await context.newPage();
@@ -138,6 +141,7 @@ export function createScanner(config, deps = {}) {
           timeoutMs: config.SUBREQUEST_TIMEOUT_MS,
           isMainDocument: (req) => req.isNavigationRequest() && req.frame() === page.mainFrame(),
           replay,
+          pinnedHost,
         });
         page.on('dialog', (d) => d.dismiss().catch(() => {}));
         // Only popups opened by the scanned page; AxeBuilder opens its own helper page.
@@ -173,6 +177,24 @@ export function createScanner(config, deps = {}) {
           );
         timings.renderMs = Date.now() - t;
 
+        let renderWarning = null;
+        if (!replay && config.DOM_QUIET_MS > 0) {
+          const quiet = await waitForQuiet(
+            page,
+            config.DOM_QUIET_MS,
+            Math.max(config.DOM_QUIET_MS, config.PAGE_BUDGET_MS ?? config.DOM_QUIET_MS),
+          ).catch(() => false);
+          if (!quiet) renderWarning = 'The page may not be fully rendered.';
+        }
+        if (!replay && waitFor) {
+          const seen = await page
+            .waitForSelector(waitFor, { timeout: Math.min(5_000, config.PAGE_BUDGET_MS ?? 5_000) })
+            .then(() => true, () => false);
+          if (!seen) {
+            renderWarning = `Selector ${String(waitFor).slice(0, 80)} did not appear. The page may not be fully rendered.`;
+          }
+        }
+
         onStage('checking');
         t = Date.now();
         const axe = await new AxeBuilder({ page }).withTags(axeTags(options)).analyze();
@@ -185,6 +207,22 @@ export function createScanner(config, deps = {}) {
         t = Date.now();
         const checks = await runChecks(page);
         timings.checksMs = Date.now() - t;
+
+        let keyboard = null;
+        if (!replay && options.keyboard !== false) {
+          try {
+            keyboard = await walkFocus(page, config.KEYBOARD_MAX_STOPS ?? 50);
+          } catch (err) {
+            keyboard = { stops: [], checks: [], warning: 'Focus order was not captured.' };
+            deps.logger?.warn({ err: err?.message }, 'keyboard walk skipped');
+          }
+        }
+        let links = [];
+        if (collectLinks) {
+          links = await page
+            .evaluate(() => [...globalThis.document.querySelectorAll('a[href]')].map((a) => a.href))
+            .catch(() => []);
+        }
 
         let screenshot = null;
         let pinFrames = [];
@@ -225,9 +263,12 @@ export function createScanner(config, deps = {}) {
           screenshot,
           pinFrames,
           viewport,
+          links,
+          keyboard,
+          renderWarning,
         };
       },
-      { timeoutMs: config.SCAN_TIMEOUT_MS, viewport },
+      { timeoutMs: timeoutMs ?? config.SCAN_TIMEOUT_MS, viewport, storageState, signal },
     );
   }
 

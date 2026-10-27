@@ -89,7 +89,7 @@ export function capturedImage(el, cached) {
  * One LLM task per unique (rule, signature, context). Image bytes stay on the
  * task only until the call; they are never cached or returned.
  */
-export function buildLlmTasks(repairs, { ctx, cached, model }) {
+export function buildLlmTasks(repairs, { ctx, cached, model, byPattern = false }) {
   const tasks = [];
   const byKey = new Map();
   for (const r of repairs) {
@@ -102,9 +102,10 @@ export function buildLlmTasks(repairs, { ctx, cached, model }) {
     const hints = el ? attrHints(el) : '';
     const vision = r.ruleId.includes('image') ? capturedImage(el, cached) : null;
     const key = sha256(
-      [PROMPT_VERSION, model, r.ruleId, v?.signature ?? r.ruleId, shortHash(context + hints), vision?.hash ?? ''].join(
-        '|',
-      ),
+      (byPattern
+        ? [PROMPT_VERSION, model, r.ruleId, v?.signature ?? r.signature ?? r.ruleId]
+        : [PROMPT_VERSION, model, r.ruleId, v?.signature ?? r.ruleId, shortHash(context + hints), vision?.hash ?? '']
+      ).join('|'),
     );
     const existing = byKey.get(key);
     if (existing) {

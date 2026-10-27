@@ -79,17 +79,23 @@ export function createBrowserPool({ maxContexts, queueMax, logger, launch }) {
      * @param {{ timeoutMs: number, viewport?: { width: number, height: number } }} opts
      * @returns {Promise<T>}
      */
-    async withContext(fn, { timeoutMs, viewport }) {
+    async withContext(fn, { timeoutMs, viewport, storageState, signal } = {}) {
+      if (signal?.aborted) throw new AppError('SCAN_TIMEOUT', 'The scan was cancelled.');
       await acquire();
       let context;
       let timer;
+      const onAbort = () => {
+        context?.close().catch(() => {});
+      };
       try {
         const browser = await getBrowser();
         context = await browser.newContext({
           serviceWorkers: 'block',
           acceptDownloads: false,
           viewport: viewport ?? { width: 1280, height: 720 },
+          ...(storageState ? { storageState } : {}),
         });
+        signal?.addEventListener('abort', onAbort, { once: true });
         const work = fn(context);
         work.catch(() => {});
         const timeout = new Promise((_, reject) => {
@@ -101,6 +107,7 @@ export function createBrowserPool({ maxContexts, queueMax, logger, launch }) {
         return await Promise.race([work, timeout]);
       } finally {
         clearTimeout(timer);
+        signal?.removeEventListener?.('abort', onAbort);
         await context?.close().catch(() => {});
         release();
       }

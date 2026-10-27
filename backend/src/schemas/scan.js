@@ -16,8 +16,14 @@ export const ScanOptions = z
   .object({
     includeAAA: z.boolean().default(false),
     includeBestPractice: z.boolean().default(true),
+    /** Same-host breadth-first crawl. Requires a signed-in user. */
+    crawl: z.boolean().default(false),
+    /** Optional CSS selector. A miss is a warning, not a failed scan. */
+    waitFor: z.string().trim().min(1).max(200).optional(),
+    /** Tab walk. Off only when the client sends false. Never affects the axe score. */
+    keyboard: z.boolean().default(true),
   })
-  .default({ includeAAA: false, includeBestPractice: true });
+  .default({ includeAAA: false, includeBestPractice: true, crawl: false, keyboard: true });
 
 export const LogStage = z.enum([
   'render',
@@ -27,6 +33,7 @@ export const LogStage = z.enum([
   'verify',
   'score',
   'screenshot',
+  'crawl',
   'failed',
 ]);
 
@@ -124,6 +131,32 @@ export const Scan = z.object({
   marks: z.array(Mark).default([]),
   viewport: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).nullable(),
   shots: z.object({ before: z.boolean(), after: z.boolean() }).default({ before: false, after: false }),
+  /** Null on scans created while signed out. Those stay capability links. */
+  ownerId: z.string().nullable().default(null),
+  access: z.enum(['capability', 'private']).default('capability'),
+  authUsed: z.boolean().default(false),
+  pinnedHost: z.string().nullable().default(null),
+  partial: z.boolean().default(false),
+  renderWarning: z.string().nullable().default(null),
+  pages: z
+    .array(
+      z.object({
+        url: z.string(),
+        depth: z.number().int().nonnegative(),
+        status: z.enum(['completed', 'skipped', 'failed']),
+        reason: z.string().nullable(),
+      }).passthrough(),
+    )
+    .default([]),
+  keyboard: z
+    .array(
+      z.object({
+        id: z.string(),
+        confidence: z.enum(['high', 'medium', 'low']),
+        message: z.string(),
+      }).passthrough(),
+    )
+    .default([]),
   tokenUsage: ScanTokenSummary,
   error: z.object({ code: z.string(), message: z.string() }).nullable(),
   createdAt: Timestamp,

@@ -1,4 +1,5 @@
-export function Business() {
+export function Business({ health }) {
+  const quotasOn = health?.quotas === 'on';
   return (
     <article className="max-w-3xl space-y-8">
       <div>
@@ -7,6 +8,11 @@ export function Business() {
           Hypotheses to test, not findings. Prices and conversion rates will change once we have
           real usage.
         </p>
+        {!quotasOn && (
+          <p className="mt-3 rounded-md border bg-surface px-3 py-2 text-sm" role="status">
+            Quotas are off. The Free and Pro numbers in the table below are not enforced.
+          </p>
+        )}
       </div>
 
       <section aria-labelledby="problem-h">
@@ -38,7 +44,9 @@ export function Business() {
         </h2>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[40rem] border-collapse text-sm">
-            <caption className="sr-only">Pricing tiers</caption>
+            <caption className="mb-2 text-left text-sm text-muted-foreground">
+              Pricing hypothesis. This table is not the quota the server enforces.
+            </caption>
             <thead>
               <tr className="border-b text-left">
                 <th scope="col" className="py-2 pr-3 font-medium">
@@ -95,11 +103,9 @@ export function Business() {
           Roadmap
         </h2>
         <ol className="mt-2 list-decimal space-y-1 pl-5">
-          <li>Crawler (multi-page, same origin)</li>
-          <li>SPA hydration wait strategy</li>
-          <li>Auth cookies for gated pages</li>
-          <li>Keyboard / focus simulation</li>
-          <li>Source mapping back to JSX</li>
+          <li>Crawler, SPA wait, login-state scans, and keyboard checks — shipped. Quotas stay off until the flag is on.</li>
+          <li>Source mapping back to JSX — not built</li>
+          <li>GitHub Action — not built</li>
         </ol>
       </section>
 

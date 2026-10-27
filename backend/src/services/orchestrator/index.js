@@ -5,7 +5,13 @@ import { createScanLog } from '../scanLog.js';
 import { AppError } from '../../utils/errors.js';
 import { sha256 } from '../../utils/hash.js';
 import { resolveSafeUrl } from '../../utils/urlSafety.js';
-import { createInProcessQueue } from '../jobs/inProcess.js';
+import { canWrite } from '../access/decide.js';
+import { executeCrawl } from '../crawl/execute.js';
+import { pageFileName, zipStore } from '../export/zipStore.js';
+import { createJobQueue } from '../jobs/queue.js';
+import { tierCaps } from '../quota/caps.js';
+import { createMeter } from '../quota/meter.js';
+import { stateForHost } from '../vault/authState.js';
 import { buildReport } from '../report/index.js';
 import { toPublicRepair } from '../repair/index.js';
 import { normalize } from '../scanner/normalize.js';
@@ -72,10 +78,31 @@ const STAGE_LOG = {
   normalizing: ['score', 'Scoring the page'],
 };
 
-export function createOrchestrator({ scanner, repo, config, logger, lookup, verifier, sourceCache, llm }) {
-  const jobs = createInProcessQueue({ logger });
+export function createOrchestrator({
+  scanner,
+  repo,
+  config,
+  logger,
+  lookup,
+  verifier,
+  sourceCache,
+  llm,
+  accounts,
+  vault,
+  meter: meterIn,
+}) {
+  const meter =
+    meterIn ?? createMeter({ ceiling: config.LLM_TOKEN_DAILY_CEILING ?? 0 });
+  let runJob = async () => {};
+  const jobs = createJobQueue({
+    redisUrl: config.REDIS_URL,
+    logger,
+    concurrency: config.BROWSER_MAX_CONTEXTS,
+    handler: (id, signal) => runJob(id, signal),
+  });
   const idempotency = new Map();
-  const sources = sourceCache ?? createSourceCache();
+  const sources =
+    sourceCache ?? createSourceCache({ maxBytes: config.CACHE_MAX_BYTES ?? 256 * 1024 * 1024 });
   const scanLog = createScanLog();
   const note = (scanId, stage, message, ms = null) => scanLog.publish(scanId, { stage, message, ms });
   const repairFlow = createRepairFlow({
@@ -89,7 +116,7 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
     onEvent: note,
   });
 
-  async function runScan({ id, input, options, createdAtMs, inputHash }, attempt = 0) {
+  async function runScan({ id, input, options, createdAtMs, inputHash, signal, auth }, attempt = 0) {
     const log = logger.child({ scanId: id });
     const timings = {
       queueMs: null,
@@ -110,7 +137,12 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
 
     try {
       log.info({ inputType: input.type }, 'scan started');
-      const raw = await scanner.scan(input, options, { onStage: stageUpdate });
+      const raw = await scanner.scan(input, options, {
+        onStage: stageUpdate,
+        signal,
+        waitFor: options.waitFor,
+        storageState: auth && input.type === 'url' ? stateForHost(auth, new URL(input.url).host) : undefined,
+      });
       Object.assign(timings, raw.timings);
 
       stageUpdate('normalizing');
@@ -127,6 +159,8 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
           mainUrl: raw.page.finalUrl,
           shots: raw.screenshot ? { before: raw.screenshot } : {},
         });
+      } else if (sources.get(id)?.pending) {
+        sources.drop(id);
       }
       const marks = marksFor(buckets.violations, raw.pinFrames ?? []);
       if (config.SCREENSHOTS) {
@@ -148,6 +182,8 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
         marks,
         viewport: raw.viewport ?? null,
         shots: { before: Boolean(raw.screenshot), after: false },
+        keyboard: raw.keyboard?.checks ?? [],
+        renderWarning: raw.renderWarning ?? null,
         headingOutline: raw.headingOutline.map(({ level, text, target, style }) => ({
           level,
           text,
@@ -160,6 +196,7 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
         timings,
         completedAt: new Date().toISOString(),
       });
+      if (auth) sources.expireIn(id, config.AUTH_RETENTION_MS);
       log.info(
         {
           violations: buckets.violations.length,
@@ -170,10 +207,21 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
         'scan completed',
       );
     } catch (err) {
+      if (signal?.aborted) {
+        note(id, 'failed', 'Cancelled.', Date.now() - createdAtMs);
+        await repo.updateScan(id, {
+          status: 'failed',
+          stage: 'failed',
+          error: { code: 'SCAN_TIMEOUT', message: 'Cancelled.' },
+          events: scanLog.list(id),
+          completedAt: new Date().toISOString(),
+        });
+        return;
+      }
       const appError = err instanceof AppError ? err : null;
       if (!appError && attempt === 0) {
         log.warn({ err: err?.message }, 'scan crashed; retrying once');
-        return runScan({ id, input, options, createdAtMs, inputHash }, 1);
+        return runScan({ id, input, options, createdAtMs, inputHash, signal, auth }, 1);
       }
       if (!appError) log.error({ err }, 'scan crashed');
       else log.warn({ code: appError.code, msg: appError.message }, 'scan failed');
@@ -192,11 +240,77 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
     }
   }
 
+  runJob = async (id, signal) => {
+    const scan = await repo.getScan(id);
+    if (!scan || scan.status === 'completed' || scan.status === 'failed') return;
+    const auth = await vault?.read(id);
+    if (scan.options?.crawl) {
+      try {
+        await executeCrawl({
+          scanId: id,
+          seedUrl: scan.input.url,
+          options: scan.options,
+          config,
+          scanner,
+          repo,
+          sources,
+          note,
+          signal,
+          lookup,
+          plan: scan.plan || 'free',
+          ownerId: scan.ownerId,
+          meter,
+          authMaterial: auth,
+          listEvents: () => scanLog.list(id),
+        });
+      } catch (err) {
+        if (signal?.aborted) {
+          note(id, 'failed', 'Cancelled.');
+          await repo.updateScan(id, {
+            status: 'failed',
+            stage: 'failed',
+            error: { code: 'SCAN_TIMEOUT', message: 'Cancelled.' },
+            events: scanLog.list(id),
+            completedAt: new Date().toISOString(),
+          });
+          return;
+        }
+        const appError = err instanceof AppError ? err : null;
+        if (!appError) logger?.error?.({ err, scanId: id }, 'crawl crashed');
+        note(id, 'failed', appError?.message ?? 'The crawl failed unexpectedly.');
+        await repo.updateScan(id, {
+          status: 'failed',
+          stage: 'failed',
+          error: appError
+            ? { code: appError.code, message: appError.message }
+            : { code: 'INTERNAL', message: 'The crawl failed unexpectedly.' },
+          events: scanLog.list(id),
+          completedAt: new Date().toISOString(),
+        });
+      }
+      return;
+    }
+    const input =
+      scan.input.type === 'url'
+        ? { type: 'url', url: scan.input.url }
+        : { type: 'html', html: sources.get(id)?.source ?? '' };
+    await runScan({
+      id,
+      input,
+      options: scan.options,
+      createdAtMs: Date.parse(scan.createdAt),
+      inputHash: scan.inputHash,
+      signal,
+      auth,
+    });
+  };
+
   return {
     /** Validate, record, start in the background, and return immediately. */
-    async createScan({ input, options }, { idempotencyKey } = {}) {
-      if (idempotencyKey) {
-        const hit = idempotency.get(idempotencyKey);
+    async createScan({ input, options, auth }, { idempotencyKey, actor, ip = 'local' } = {}) {
+      const scopedKey = idempotencyKey ? `${actor?.userId ?? 'anon'}:${idempotencyKey}` : undefined;
+      if (scopedKey) {
+        const hit = idempotency.get(scopedKey);
         if (hit && hit.expiresAt > Date.now()) {
           const existing = await repo.getScan(hit.id);
           if (existing) return { id: existing.id, status: existing.status, stage: existing.stage };
@@ -218,6 +332,33 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
         scanInput = { type: 'url', url: url.href };
         publicInput = { type: 'url', url: url.href };
         hashSource = `url\n${url.href}`;
+      }
+      if (options?.crawl) {
+        if (!actor) throw new AppError('AUTH_REQUIRED', 'Sign in to crawl a site.');
+        if (input.type !== 'url') throw new AppError('VALIDATION_ERROR', 'A crawl needs a URL.');
+      }
+      if (auth) {
+        if (!actor) throw new AppError('AUTH_REQUIRED', 'Sign in to scan a page that needs a login.');
+        if (!vault?.enabled) throw new AppError('VALIDATION_ERROR', 'Authenticated scanning is disabled: no key.');
+        if (JSON.stringify(auth).length > 200_000) {
+          throw new AppError('PAYLOAD_TOO_LARGE', 'The login state is too large.');
+        }
+      }
+      if (config.QUOTAS_ENABLED && meter) {
+        if (!actor) {
+          const used = await meter.scansUsed(`ip:${ip}`);
+          if (config.LOGGED_OUT_SCANS_DAY > 0 && used >= config.LOGGED_OUT_SCANS_DAY) {
+            throw new AppError('RATE_LIMITED', 'The daily limit for signed-out scans has been reached.', {
+              retryAfterSec: 3600,
+            });
+          }
+        } else {
+          const caps = tierCaps(config, actor.plan);
+          const used = await meter.scansUsed(actor.userId);
+          if (used >= caps.scans) {
+            throw new AppError('RATE_LIMITED', 'The daily scan limit has been reached.', { retryAfterSec: 3600 });
+          }
+        }
       }
 
       const createdAtMs = Date.now();
@@ -249,6 +390,15 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
         marks: [],
         viewport: null,
         shots: { before: false, after: false },
+        ownerId: actor?.userId ?? null,
+        access: actor ? 'private' : 'capability',
+        authUsed: Boolean(auth),
+        pinnedHost: null,
+        partial: false,
+        pages: [],
+        keyboard: [],
+        renderWarning: null,
+        plan: actor?.plan ?? 'free',
         tokenUsage: emptyTokenSummary(config.LLM_TOKEN_BUDGET_PER_SCAN),
         error: null,
         createdAt: new Date(createdAtMs).toISOString(),
@@ -256,21 +406,26 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
       };
       await repo.saveScan(scan);
       await repo.recordUsage({ scanId: scan.id, kind: 'scan', at: scan.createdAt });
-      if (idempotencyKey) {
-        idempotency.set(idempotencyKey, { id: scan.id, expiresAt: Date.now() + IDEMPOTENCY_TTL_MS });
+      if (scopedKey) {
+        idempotency.set(scopedKey, { id: scan.id, expiresAt: Date.now() + IDEMPOTENCY_TTL_MS });
       }
+      if (scanInput.type === 'html') {
+        sources.set(scan.id, {
+          source: scanInput.html,
+          resources: new Map(),
+          mainUrl: null,
+          shots: {},
+          pending: true,
+        });
+      }
+      if (auth) await vault.put(scan.id, auth);
+      if (actor) await accounts?.noteScan(actor.userId, scan.id);
+      await meter.addScans(actor?.userId ?? `ip:${ip}`);
 
-      jobs.enqueue(
-        () =>
-          runScan({
-            id: scan.id,
-            input: scanInput,
-            options,
-            createdAtMs,
-            inputHash: scan.inputHash,
-          }),
-        { label: scan.id },
-      );
+      jobs.enqueue((signal) => runJob(scan.id, signal), {
+        label: scan.id,
+        onSettled: () => vault?.delete(scan.id),
+      });
       return { id: scan.id, status: scan.status, stage: scan.stage };
     },
 
@@ -282,8 +437,13 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
       return scan;
     },
 
-    watchEvents(id, send) {
-      return scanLog.subscribe(id, send);
+    watchEvents(id, send, afterId) {
+      return scanLog.subscribe(id, send, { afterId });
+    },
+
+    cancelScan(id) {
+      jobs.cancel(id);
+      return { id, status: 'cancelling' };
     },
 
     async getScreenshot(id, which) {
@@ -296,15 +456,77 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
     },
 
     async getSource(id) {
-      await this.getScan(id);
+      const scan = await this.getScan(id);
       const cached = sources.get(id);
       if (!cached?.source) {
         throw new AppError(
           'SOURCE_EXPIRED',
-          'The scanned page is kept for one hour only and has expired. Scan it again to see the source.',
+          scan.authUsed
+            ? 'This authenticated scan expired 15 minutes after it finished. Scan it again to see the source.'
+            : 'The scanned page is kept for one hour only and has expired. Scan it again to see the source.',
         );
       }
       return cached.source;
+    },
+
+    async getZip(id) {
+      const scan = await this.getScan(id);
+      if (scan.authUsed && !sources.get(id)) {
+        throw new AppError(
+          'SOURCE_EXPIRED',
+          'This authenticated scan expired 15 minutes after it finished. The download is no longer available.',
+        );
+      }
+      const verification = (await repo.listVerifications(id)).at(-1);
+      const files = [];
+      const manifestPages = [];
+      let total = 0;
+      let n = 0;
+      const finished = (scan.pages ?? []).filter((page) => page.status === 'completed');
+      const rows = finished.length ? finished : [{ url: scan.page?.finalUrl, cacheIndex: null }];
+      for (const page of rows) {
+        const patched = verification?.pageFiles?.find((item) => item.url === page.url)?.html;
+        const cached =
+          page.cacheIndex != null ? sources.get(`${id}#${page.cacheIndex}`)?.source : sources.get(id)?.source;
+        const html = patched || cached;
+        if (!html) continue;
+        total += Buffer.byteLength(html);
+        const name = pageFileName(n);
+        n += 1;
+        files.push({ name, data: html });
+        manifestPages.push({
+          url: page.url,
+          file: name,
+          patches: (verification?.repairs ?? []).map((item) => ({
+            repairId: item.repairId,
+            outcome: item.outcome ?? null,
+          })),
+          verification: verification?.status ?? 'not-run',
+        });
+      }
+      const manifest = JSON.stringify({ scanId: id, pages: manifestPages }, null, 2);
+      total += Buffer.byteLength(manifest);
+      if (total > (config.ZIP_MAX_BYTES ?? 20 * 1024 * 1024)) {
+        throw new AppError(
+          'PAYLOAD_TOO_LARGE',
+          'The download is larger than 20 MB, so it was not created. Download one page at a time instead.',
+        );
+      }
+      if (!files.length) {
+        throw new AppError('SOURCE_EXPIRED', 'The scanned pages are no longer available. Scan the site again.');
+      }
+      files.push({ name: 'manifest.json', data: manifest });
+      return zipStore(files);
+    },
+
+    async createShare(id, actor, { expiresAt } = {}) {
+      const scan = await this.getScan(id);
+      if (!scan.ownerId) throw new AppError('AUTH_REQUIRED', 'Sign in to create a share link.');
+      if (!canWrite(scan, actor)) throw new AppError('NOT_FOUND', 'Scan not found. It may have expired.');
+      if (scan.authUsed) throw new AppError('VALIDATION_ERROR', 'Authenticated scans cannot be shared.');
+      const exp = expiresAt ?? new Date(Date.now() + config.SCAN_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
+      const token = await accounts.createShare({ scanId: id, userId: actor.userId, expiresAt: exp });
+      return { path: `/shares/${token}`, expiresAt: exp };
     },
 
     async listScans(ids) {
@@ -365,7 +587,12 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
       if (!scan) throw new AppError('NOT_FOUND', 'Scan not found. It may have expired.');
       const repairs = (await repo.listRepairs(scanId)).map(toPublicRepair);
       const verifications = await repo.listVerifications(scanId);
-      return buildReport({ scan, repairs, verification: verifications.at(-1) ?? null });
+      return buildReport({
+        scan,
+        repairs,
+        verification: verifications.at(-1) ?? null,
+        screenshotsAvailable: Boolean(sources.getShot(scanId, 'before') || sources.getShot(scanId, 'after')),
+      });
     },
 
     /** Resolves when every in-flight scan has finished (tests, graceful shutdown). */

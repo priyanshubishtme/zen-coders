@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { eventsUrl } from '@/lib/api.js';
 
-const FILTERS = ['all', 'render', 'axe', 'patch', 'verify', 'score', 'screenshot', 'failed'];
+const FILTERS = ['all', 'render', 'axe', 'crawl', 'patch', 'verify', 'score', 'screenshot', 'failed'];
 
 /**
  * Live engine log. Polling still owns the score; this only streams the log.
@@ -14,18 +14,63 @@ export function LogPanel({ scanId, saved = [], onEvent }) {
   const events = merge(saved, live);
 
   useEffect(() => {
-    if (typeof EventSource === 'undefined') return undefined;
-    const source = new EventSource(eventsUrl(scanId));
-    source.onmessage = (message) => {
-      try {
-        const event = JSON.parse(message.data);
-        onEvent?.(event);
-        setLive((prev) => merge(prev, [event]));
-      } catch {
-        /* ignore a malformed line */
+    const ctrl = new AbortController();
+    let lastId = '';
+    let stopped = false;
+    const run = async () => {
+      while (!stopped) {
+        let res;
+        try {
+          res = await fetch(eventsUrl(scanId), {
+            credentials: 'include',
+            headers: { accept: 'text/event-stream', 'Last-Event-ID': lastId },
+            signal: ctrl.signal,
+          });
+        } catch {
+          if (ctrl.signal.aborted) return;
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          continue;
+        }
+        if (!res.ok || !res.body?.getReader) return;
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        try {
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) return;
+            buf += decoder.decode(value, { stream: true });
+            const chunks = buf.split('\n\n');
+            buf = chunks.pop() ?? '';
+            for (const chunk of chunks) {
+              const id = /^id: (.+)$/m.exec(chunk)?.[1];
+              const data = chunk
+                .split('\n')
+                .filter((line) => line.startsWith('data: '))
+                .map((line) => line.slice(6))
+                .join('\n');
+              if (id) lastId = id;
+              if (!data) continue;
+              try {
+                const event = JSON.parse(data);
+                onEvent?.(event);
+                setLive((prev) => merge(prev, [event]));
+              } catch {
+                /* ignore a malformed line */
+              }
+            }
+          }
+        } catch {
+          if (ctrl.signal.aborted) return;
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
       }
     };
-    return () => source.close();
+    run();
+    return () => {
+      stopped = true;
+      ctrl.abort();
+    };
   }, [scanId, onEvent]);
 
   const visible = useMemo(

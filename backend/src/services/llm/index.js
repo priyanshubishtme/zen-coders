@@ -55,6 +55,9 @@ export function createLlmGateway(config, deps = {}) {
   const strong = config.LLM_MODEL_STRONG || '';
   const vision = config.LLM_MODEL_VISION || '';
   const dailyCap = config.LLM_TOKEN_BUDGET_PER_IP_DAY;
+  const meter = deps.meter ?? null;
+  const quotasOn = Boolean(config.QUOTAS_ENABLED);
+  const ceiling = config.LLM_TOKEN_DAILY_CEILING ?? 0;
 
   const totals = {
     calls: 0,
@@ -100,12 +103,26 @@ export function createLlmGateway(config, deps = {}) {
     }
   }
 
-  async function callModel(model, items, { scanLeft, ip }) {
+  async function callModel(model, items, { scanLeft, ip, ownerKey, plan }) {
     const visionCount = items.filter((t) => t.image).length;
     const est = estimateTokens(items, { vision: visionCount });
-    if (est > scanLeft.tokens) return { kind: 'over-budget', est: 0 };
-    const slot = daySlot(ip);
-    if (slot.used + est > dailyCap) return { kind: 'over-budget', est: 0 };
+    if (Number.isFinite(scanLeft.tokens) && est > scanLeft.tokens) return { kind: 'over-budget', est: 0 };
+    const who = ownerKey || (ip ? `ip:${ip}` : '');
+    if (meter) {
+      const tierCap = !quotasOn
+        ? 0
+        : plan === 'pro'
+          ? (config.PRO_TOKENS_DAY ?? 0)
+          : config.TOKEN_DAILY_OVERRIDE > 0
+            ? config.TOKEN_DAILY_OVERRIDE
+            : (config.FREE_TOKENS_DAY ?? 0);
+      const gate = await meter.allowTokens({ est, quotasEnabled: quotasOn, ceiling, tierCap, ownerKey: who });
+      if (gate === 'ceiling') return { kind: 'ceiling', est: 0 };
+      if (gate === 'over-budget') return { kind: 'over-budget', est: 0 };
+    } else if (quotasOn && dailyCap > 0) {
+      const slot = daySlot(ip);
+      if (slot.used + est > dailyCap) return { kind: 'over-budget', est: 0 };
+    }
 
     await throttle(est);
     if (!circuit.allow()) return { kind: 'circuit-open', est: 0 };
@@ -122,8 +139,9 @@ export function createLlmGateway(config, deps = {}) {
         const prompt = res.promptTokens || est;
         const completion = res.completionTokens || 40;
         const used = prompt + completion;
-        slot.used += used;
-        scanLeft.tokens = Math.max(0, scanLeft.tokens - used);
+        if (!meter && quotasOn) daySlot(ip).used += used;
+        if (meter) await meter.recordTokens({ n: used, ownerKey: who });
+        scanLeft.tokens = Number.isFinite(scanLeft.tokens) ? Math.max(0, scanLeft.tokens - used) : scanLeft.tokens;
         totals.calls += 1;
         totals.promptTokens += prompt;
         totals.completionTokens += completion;
@@ -168,7 +186,7 @@ export function createLlmGateway(config, deps = {}) {
    * @param {object[]} tasks  from buildLlmTasks
    * @param {{ ip?: string, scanBudget?: number }} [opts]
    */
-  async function complete(tasks, { ip = 'local', scanBudget = config.LLM_TOKEN_BUDGET_PER_SCAN } = {}) {
+  async function complete(tasks, { ip = 'local', scanBudget, ownerId, plan } = {}) {
     const snap = {
       calls: totals.calls,
       promptTokens: totals.promptTokens,
@@ -176,7 +194,9 @@ export function createLlmGateway(config, deps = {}) {
       totalTokens: totals.totalTokens,
       estimatedCostUsd: totals.estimatedCostUsd,
     };
-    const scanLeft = { tokens: scanBudget };
+    const budget = scanBudget ?? config.LLM_TOKEN_BUDGET_PER_SCAN;
+    const scanLeft = { tokens: budget > 0 ? budget : Infinity };
+    const ownerKey = ownerId || `ip:${ip}`;
     const results = new Map();
     const unique = tasks;
     const fanout = unique.reduce((n, t) => n + t.repairIds.length, 0);
@@ -206,9 +226,10 @@ export function createLlmGateway(config, deps = {}) {
 
       const runBatches = async (items, model) => {
         for (const batch of chunk(items, MAX_BATCH)) {
-          const res = await callModel(model, batch, { scanLeft, ip });
+          const res = await callModel(model, batch, { scanLeft, ip, ownerKey, plan });
           if (res.kind !== 'ok') {
-            const st = res.kind === 'over-budget' ? 'over-budget' : res.kind === 'circuit-open' ? 'circuit-open' : 'error';
+            const st =
+              res.kind === 'over-budget' || res.kind === 'ceiling' || res.kind === 'circuit-open' ? res.kind : 'error';
             for (const t of batch) results.set(t.key, { text: null, confidence: 'low', status: st });
             continue;
           }
@@ -230,7 +251,7 @@ export function createLlmGateway(config, deps = {}) {
           if (retry.length && scanLeft.tokens > 0) {
             const retryModel = strong && model !== strong ? strong : cheap;
             const retryItems = retry.map((x) => x.t);
-            const again = await callModel(retryModel, retryItems, { scanLeft, ip });
+            const again = await callModel(retryModel, retryItems, { scanLeft, ip, ownerKey, plan });
             const parsed = again.kind === 'ok' ? parseItems(again.text, retryItems) : [];
             const second = new Map(parsed.map((i) => [i.key, i]));
             for (const { t, item } of retry) {
@@ -263,7 +284,7 @@ export function createLlmGateway(config, deps = {}) {
       model: provider.enabled ? cheap : null,
       dedupedItems,
       cacheHits: [...results.values()].filter((r) => r.status === 'cached').length,
-      budgetExhausted: [...results.values()].some((r) => r.status === 'over-budget'),
+      budgetExhausted: [...results.values()].some((r) => r.status === 'over-budget' || r.status === 'ceiling'),
       circuitOpen: status() === 'circuit-open',
       used: used.length,
       usage: {

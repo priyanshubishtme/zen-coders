@@ -36,6 +36,9 @@ export function ScanForm({ onSubmit, busy, disabledReason, maxBytes = DEFAULT_MA
   const [mode, setMode] = useState('html');
   const [html, setHtml] = useState('');
   const [url, setUrl] = useState('');
+  const [crawl, setCrawl] = useState(false);
+  const [waitFor, setWaitFor] = useState('');
+  const [authText, setAuthText] = useState('');
   const [error, setError] = useState(null);
   const fieldRef = useRef(null);
 
@@ -51,7 +54,24 @@ export function ScanForm({ onSubmit, busy, disabledReason, maxBytes = DEFAULT_MA
       fieldRef.current?.focus();
       return;
     }
-    onSubmit(mode === 'html' ? { type: 'html', html } : { type: 'url', url: url.trim() });
+    if (mode === 'html') {
+      onSubmit({ type: 'html', html });
+      return;
+    }
+    let auth;
+    if (authText.trim()) {
+      try {
+        auth = JSON.parse(authText);
+      } catch {
+        setError('Login state has to be JSON: a storageState object or { "cookies": [...] }.');
+        return;
+      }
+    }
+    const options = {};
+    if (crawl) options.crawl = true;
+    if (waitFor.trim()) options.waitFor = waitFor.trim();
+    const input = { type: 'url', url: url.trim() };
+    onSubmit(crawl || waitFor.trim() || auth ? { input, options, ...(auth ? { auth } : {}) } : input);
   };
 
   const trySample = () => {
@@ -127,6 +147,45 @@ export function ScanForm({ onSubmit, busy, disabledReason, maxBytes = DEFAULT_MA
               <p id={hintId} className="mt-1 text-sm text-muted-foreground">
                 Public http(s) pages only. Private and internal addresses are blocked.
               </p>
+              <label className="mt-3 flex min-h-10 items-center gap-2 text-sm">
+                <input type="checkbox" checked={crawl} onChange={(e) => setCrawl(e.target.checked)} />
+                Crawl this site
+              </label>
+              <p className="text-sm text-muted-foreground">
+                Same host only, breadth-first, up to the server page cap. Sign in required. Pages are scanned one
+                after another.
+              </p>
+              <label htmlFor={`${uid}-wait`} className="mt-3 block text-sm font-medium">
+                Wait for selector (optional)
+              </label>
+              <input
+                id={`${uid}-wait`}
+                value={waitFor}
+                onChange={(e) => setWaitFor(e.target.value)}
+                className="mt-1 min-h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                placeholder="#app"
+              />
+              <details className="mt-3 rounded-md border p-3">
+                <summary className="min-h-10 cursor-pointer text-sm font-medium">Scan a page that needs a login</summary>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Paste a Playwright storage state or a cookie list. It is encrypted for this scan only, sent to the
+                  pinned host, and deleted when the scan finishes — including when you cancel. It is never written to
+                  the log or the job queue. Sign in first. An authenticated scan cannot be shared, and its pages are
+                  kept for 15 minutes after the scan finishes. There is no password reset.
+                </p>
+                <label htmlFor={`${uid}-auth`} className="mt-2 block text-sm font-medium">
+                  Login state JSON
+                </label>
+                <textarea
+                  id={`${uid}-auth`}
+                  value={authText}
+                  onChange={(e) => setAuthText(e.target.value)}
+                  rows={4}
+                  spellCheck={false}
+                  className="mt-1 w-full rounded-md border border-input bg-background p-2 font-mono text-sm"
+                  placeholder='{"cookies":[{"name":"sid","value":"...","domain":"example.com"}]}'
+                />
+              </details>
             </div>
           )
         }

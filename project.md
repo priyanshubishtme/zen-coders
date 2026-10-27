@@ -315,12 +315,14 @@ Lighthouse is not in the pipeline. A future comparison column could show a Light
 | Before/after JPEG screenshots | RAM, same 1 hour cache as the HTML | Same. Not in Mongo. | Same |
 | Pin boxes, log events, shot flags | On the scan record | On the scan document | On the scan record |
 | Idempotency keys | RAM, 24 hours | RAM, 24 hours. Not in Mongo. | RAM |
-| LLM cache and daily token counts | RAM | RAM. A restart resets the daily budget. | RAM |
+| LLM cache | RAM | RAM. A restart clears cached drafts. | RAM |
+| Daily token ceiling and login counters | RAM | Mongo `counters` and `windows`. A restart keeps the UTC-day ceiling. | RAM |
+| Accounts, sessions, share tokens, encrypted login state | RAM | Mongo `users`, `sessions`, `shares`, `secrets` | RAM |
 | This browser’s history list | `localStorage` | `localStorage` on that browser | `localStorage` |
 
 API process in production: the root `Dockerfile`, based on `mcr.microsoft.com/playwright` so Chromium is already installed. Start command is `node src/server.js`. It listens on `PORT` (Render sets this). `TRUST_PROXY=true` in production so per-IP limits see the visitor, not the proxy.
 
-UI in production: `npm run build -w frontend`. Publish `frontend/dist`. Set `VITE_API_BASE_URL` at **build** time to the API origin, with no trailing slash. The host must serve `index.html` for `/history`, `/business`, and `/scans/:id/report`.
+UI in production: `npm run build -w frontend`. Publish `frontend/dist`. Prefer one host that proxies `/api` to the API, and leave `VITE_API_BASE_URL` unset, so the session cookie can stay `SameSite=Lax`. A split host sets `VITE_API_BASE_URL` at **build** time (no trailing slash) and `COOKIE_SAMESITE=none`. The host must serve `index.html` for `/history`, `/business`, `/login`, `/projects`, `/scans/:id/report`, and `/shares/:token`.
 
 Do not run the API on a platform that freezes the process between requests. The browser pool and the source cache assume a long-lived process.
 
@@ -332,6 +334,9 @@ Do not run the API on a platform that freezes the process between requests. The 
 | `/history` | This browser’s scans, trend chart plus table. |
 | `/business` | Pricing hypotheses, the GitHub Action idea, limits. Text from the business plan. |
 | `/scans/:id/report` | Read-only report, copy link, three downloads. |
+| `/login`, `/signup` | Account. No password reset. |
+| `/projects` | The Personal project and scans started while signed in. |
+| `/shares/:token` | A read-only report. No owner email, no apply, no cancel. |
 
 The results column, after a scan, contains:
 
@@ -350,10 +355,10 @@ The results view is still one scrolling column. Under the score, the workbench s
 
 ## 8. Future scope
 
-Nothing below is implemented, except empty stubs:
-
-- `backend/src/services/scanner/strategies.js` — names the crawler, SPA wait, auth cookie, and keyboard check, and does none of them.
-- `backend/src/services/repair/sourceMap.js` — `mapPatchToSource()` returns `null`.
+Source mapping is still a stub: `backend/src/services/repair/sourceMap.js` returns `null`.
+The crawler, SPA wait, authenticated scan, and keyboard walk shipped in Phase B.
+[`docs/12-phase-b.md`](docs/12-phase-b.md) is the contract. Scans saved before that have no
+owner and stay capability links. Nothing moves them onto an account.
 
 The plug-in point and the contract change for each item are also in [`docs/09-roadmap-future.md`](docs/09-roadmap-future.md).
 
@@ -363,23 +368,14 @@ The workbench is the default results view. It does not change detection or repai
 
 - Screenshots are a viewport JPEG (1280×720 by default, quality 60, max 500 KB). The before shot is taken at the end of the scan. The after shot is taken from the patched HTML after Apply, in a new browser context, same viewport. Bytes live in the one-hour memory source cache, not in MongoDB. The scan record stores only `shots.before` / `shots.after`, `viewport`, and `marks`.
 - Pins are fractions of that viewport. `GET /scans/:id` still returns the score and issues. `GET /scans/:id/events` streams the log and the finished list is saved on the scan. `GET /scans/:id/source` returns the original HTML as `text/plain`.
-- Color filters and the name list explain the screenshot. They are not a second detector. Focus order is not captured.
+- Color filters and the name list explain the screenshot. They are not a second detector. A keyboard walk, when the scan recorded one, is listed with a confidence. It is not an axe violation. An empty list still says focus order was not captured.
 - Monaco (`@monaco-editor/react`) loads only after “Show original and patched code”, from the editor’s CDN. The landing page does not load it.
 
 Still open, and not part of Phase A: a shorter landing page, denser issue rows, and rewriting a preview copy with `data-afx-mark` (we used a screenshot and pins instead of injecting marks into the customer’s HTML).
 
 ### 8.2 Multi-page crawl
 
-Today one scan is one page. A crawler service would:
-
-- Start from the URL or a sitemap.
-- Stay on the same origin.
-- Respect `robots.txt`.
-- Stop at a page cap (the business plan’s cost risk).
-- Create one Site holding many Scan records.
-- Reuse repair signatures so a shared header is fixed once, not once per page.
-
-New HTTP routes would be additive (`/sites`). The score for a site would use the same formula, weighted by elements, not by a flat average of page scores. Stub name already exists. No code fetches a second page.
+Shipped. One crawl is one scan. Breadth-first, same host after the seed URL's redirects, `robots.txt`, pages one at a time. The site score uses the same formula on the pages' findings together, not an average of page scores. A shared pattern is drafted once and verified on every page. There is no sitemap and no `/sites` resource. Limits and the time-budget abort are in [`docs/12-phase-b.md`](docs/12-phase-b.md).
 
 ### 8.3 Pages that only exist after JavaScript (React and other SPAs)
 
@@ -445,3 +441,4 @@ Later, in order:
 | [09 Roadmap](docs/09-roadmap-future.md) | Plug-in point and contract change per future feature |
 | [10 Deploy](docs/10-deploy.md) | Static UI, Docker API, Mongo |
 | [11 Demo script](docs/11-demo-script.md) | Three-minute demo (about 49 → about 98) |
+| [12 Phase B](docs/12-phase-b.md) | Crawl, accounts, encrypted login state, quotas |

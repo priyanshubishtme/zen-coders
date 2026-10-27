@@ -5,16 +5,49 @@
  *
  * @param {{ ttlMs?: number, maxEntries?: number, now?: () => number }} [opts]
  */
-export function createSourceCache({ ttlMs = 60 * 60 * 1000, maxEntries = 100, now = Date.now } = {}) {
+function weightOf(value) {
+  let n = Buffer.byteLength(value?.source ?? '');
+  for (const shot of Object.values(value?.shots ?? {})) n += shot?.length ?? 0;
+  return n;
+}
+
+export function createSourceCache({
+  ttlMs = 60 * 60 * 1000,
+  maxEntries = 100,
+  maxBytes = 256 * 1024 * 1024,
+  now = Date.now,
+} = {}) {
   const entries = new Map();
+
+  function evict() {
+    let total = 0;
+    for (const entry of entries.values()) total += entry.bytes;
+    while (entries.size > maxEntries || (total > maxBytes && entries.size > 1)) {
+      const oldest = entries.keys().next().value;
+      total -= entries.get(oldest).bytes;
+      entries.delete(oldest);
+    }
+  }
 
   return {
     ttlMs,
-    /** @param {string} scanId @param {{ source: string, resources: Map, mainUrl: string | null }} value */
-    set(scanId, value) {
+    /** @param {string} scanId @param {{ source: string, resources: Map, mainUrl: string | null }} value @param {number} [ttl] */
+    set(scanId, value, ttl) {
+      const prev = entries.get(scanId);
       entries.delete(scanId);
-      entries.set(scanId, { value, expiresAt: now() + ttlMs });
-      while (entries.size > maxEntries) entries.delete(entries.keys().next().value);
+      const expiresAt = ttl == null && prev ? prev.expiresAt : now() + (ttl ?? ttlMs);
+      entries.set(scanId, { value, expiresAt, bytes: weightOf(value) });
+      evict();
+    },
+    drop(scanId) {
+      entries.delete(scanId);
+    },
+    /** Start the retention clock from now. Used when an authenticated scan completes. */
+    expireIn(scanId, ms) {
+      const entry = entries.get(scanId);
+      if (!entry) return false;
+      entry.expiresAt = now() + ms;
+      return true;
     },
     get(scanId) {
       const e = entries.get(scanId);

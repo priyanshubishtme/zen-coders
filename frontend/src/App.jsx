@@ -12,6 +12,8 @@ import { usePath } from '@/lib/path.js';
 import { Business } from '@/pages/Business.jsx';
 import { History } from '@/pages/History.jsx';
 import { LandingIntro } from '@/pages/LandingIntro.jsx';
+import { Login } from '@/pages/Login.jsx';
+import { Projects } from '@/pages/Projects.jsx';
 import { ReportPage } from '@/pages/ReportPage.jsx';
 
 function disabledReason(healthState) {
@@ -43,6 +45,16 @@ function Workspace({ health, healthState, pollMs }) {
           disabledReason={blocked}
           maxBytes={health?.limits.maxHtmlBytes}
         />
+        {busy && scan.scan?.pages?.length > 0 && (
+          <ul className="rounded-lg border px-3 py-2 text-sm" aria-label="Crawl progress">
+            {scan.scan.pages.map((page) => (
+              <li key={`${page.depth}-${page.url}`} className="flex justify-between gap-3 py-1">
+                <span className="font-mono">{page.url}</span>
+                <span>{page.status === 'completed' ? 'Finished' : page.reason}</span>
+              </li>
+            ))}
+          </ul>
+        )}
         {busy && <ScanProgress stage={scan.scan?.stage ?? 'submitting'} onCancel={scan.cancel} />}
         {scan.phase === 'error' && <ErrorPanel error={scan.error} onRetry={scan.cancel} />}
         {scan.phase === 'done' && scan.scan.status === 'failed' && (
@@ -59,8 +71,12 @@ function Workspace({ health, healthState, pollMs }) {
 function Router({ path, ...rest }) {
   const report = /^\/scans\/([^/]+)\/report$/.exec(path);
   if (report) return <ReportPage id={decodeURIComponent(report[1])} />;
+  const share = /^\/shares\/([^/]+)$/.exec(path);
+  if (share) return <ReportPage shareToken={decodeURIComponent(share[1])} />;
   if (path === '/history') return <History />;
-  if (path === '/business') return <Business />;
+  if (path === '/business') return <Business health={rest.health} />;
+  if (path === '/login' || path === '/signup') return <Login mode={path === '/signup' ? 'signup' : 'login'} />;
+  if (path === '/projects') return <Projects />;
   return <Workspace {...rest} />;
 }
 
