@@ -2,7 +2,9 @@
 export function createScansController(orchestrator) {
   return {
     async create(req, res) {
-      res.status(201).json(await orchestrator.createScan(req.valid.body));
+      const accepted = await orchestrator.createScan(req.valid.body);
+      req.log.info({ scanId: accepted.id }, 'scan accepted');
+      res.status(202).location(`/scans/${accepted.id}`).json(accepted);
     },
     async get(req, res) {
       res.json(await orchestrator.getScan(req.valid.params.id));

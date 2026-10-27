@@ -6,8 +6,16 @@ const app = createApp(config);
 
 const server = app.listen(config.PORT, () => {
   console.log(`AccessFix API listening on http://localhost:${config.PORT}`);
+  if (config.ALLOW_PRIVATE_URLS) {
+    console.warn('ALLOW_PRIVATE_URLS=true: private network scanning is enabled (dev only).');
+  }
 });
 
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => server.close(() => process.exit(0)));
+async function shutdown() {
+  server.close();
+  await app.locals.orchestrator.idle();
+  await app.locals.scanner.close();
+  process.exit(0);
 }
+
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, shutdown);

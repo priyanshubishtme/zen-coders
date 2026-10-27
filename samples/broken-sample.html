@@ -1,0 +1,58 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Bakery: weekly specials</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem;
+        color: #222;
+        background: #fff;
+      }
+      .muted {
+        color: #b0b0b0;
+      }
+      .hero-note {
+        color: #666;
+        background-image: linear-gradient(#000, #fff);
+      }
+      .icon {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        background: #c33;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="/cart"><span class="icon"></span></a>
+      <button type="button">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16">
+          <path d="M2 4h12M2 8h12M2 12h12" stroke="#222" />
+        </svg>
+      </button>
+    </header>
+
+    <main>
+      <h1>Weekly specials</h1>
+      <p class="muted">Fresh bread every morning, baked before sunrise.</p>
+      <p class="hero-note">Free delivery on orders over $30.</p>
+
+      <h3>Sourdough</h3>
+      <img
+        src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=="
+        width="120"
+        height="80"
+      />
+      <p>Our signature loaf. <a href="/menu/sourdough">Read more</a></p>
+
+      <h1>Newsletter</h1>
+      <form action="/subscribe">
+        <input type="text" name="email" />
+        <button type="submit">Subscribe</button>
+      </form>
+    </main>
+  </body>
+</html>

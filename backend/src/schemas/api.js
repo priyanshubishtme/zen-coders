@@ -53,6 +53,11 @@ export const HealthResponse = z.object({
     store: z.enum(['memory', 'mongo']),
     llm: z.enum(['off', 'on', 'circuit-open']),
   }),
+  limits: z.object({
+    maxHtmlBytes: z.number().int().positive(),
+    /** true only in dev/test; the UI shows a warning badge. */
+    privateUrlsAllowed: z.boolean(),
+  }),
 });
 
 export const UsageResponse = z.object({

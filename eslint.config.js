@@ -16,6 +16,11 @@ export default [
     },
   },
   {
+    // Serialized and evaluated inside the scanned page.
+    files: ['backend/src/services/scanner/checks/**/*.js'],
+    languageOptions: { globals: globals.browser },
+  },
+  {
     files: ['frontend/**/*.{js,jsx}'],
     plugins: { react, 'react-hooks': reactHooks, 'jsx-a11y': jsxA11y },
     languageOptions: {

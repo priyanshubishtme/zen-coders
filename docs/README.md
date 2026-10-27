@@ -30,14 +30,14 @@ Start here. Read in order; each doc is short.
 
 ## Phases
 
-| Phase | Scope                                                                                                            | Exit criterion                                                      |
-| ----- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| 0     | Docs, scaffold, contracts                                                                                        | A new teammate can say what to build, why, and what is out of scope |
-| 1     | Paste HTML -> axe scan -> deterministic fixes -> verify -> before/after score. LLM off, memory store, minimal UI | Demo loop works end to end with zero API keys                       |
-| 2     | URL input with SSRF-hardened fetch                                                                               | Public URL scans safely, private IPs blocked                        |
-| 3     | LLM provider, token accounting, cache, batching, rate limiting                                                   | Tokens per verified fix shown; app still works with LLM off         |
-| 4     | MongoDB adapter, scan history, Recharts trends                                                                   | Same contract tests pass on both adapters                           |
-| 5     | Polish, shareable report, `/business` page, demo hardening                                                       | We pass our own audit with score 100 and zero regressions           |
+| Phase | Scope                                                                                                                                                                                   | Exit criterion                                                                              | Status |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------ |
+| 0     | Docs, scaffold, contracts                                                                                                                                                               | A new teammate can say what to build, why, and what is out of scope                         | Done   |
+| 1     | Scan pipeline: pasted HTML **and URL** (SSRF-hardened), browser pool, axe + our checks, normalizer, plain-language templates, repository (memory + Mongo stub), scan UI with all states | The broken sample returns the expected violations in under 5 s; hostile input never crashes | Done   |
+| 2     | Repairs (deterministic first), verification by re-scan, score, before/after view                                                                                                        | Verified fixes raise the score with zero regressions, LLM off                               | Next   |
+| 3     | LLM provider, token accounting, cache, batching, rate limiting                                                                                                                          | Tokens per verified fix shown; app still works with LLM off                                 |        |
+| 4     | MongoDB adapter, scan history, Recharts trends                                                                                                                                          | Same contract tests pass on both adapters                                                   |        |
+| 5     | Polish, shareable report, `/business` page, demo hardening                                                                                                                              | We pass our own audit with score 100 and zero regressions                                   |        |
 
 ## Deliberately out of scope (until the core loop works)
 

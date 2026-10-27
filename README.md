@@ -5,8 +5,9 @@ preview, and see a **verified** before/after score. Fix-first, no overlays, work
 
 Hackathon problem statement PS 11: "Web Accessibility Auditor + Fix-Suggester".
 
-> **Status: Phase 0 (docs, scaffold, contracts).** Only `GET /health` is live. The other
-> endpoints validate input and then return `501 NOT_IMPLEMENTED`. Start with [`docs/`](docs/README.md).
+> **Status: Phase 1 (scan pipeline).** Paste HTML or scan a URL, get WCAG 2.2 A/AA issues in plain
+> language with severity, WCAG references and "who it affects". Repairs, verification and the
+> score arrive in Phase 2 (those endpoints return `501` for now). Start with [`docs/`](docs/README.md).
 
 ## Quick start
 
@@ -15,23 +16,29 @@ Requirements: Node 20.11+ (see `.nvmrc`), npm 10+.
 ```bash
 npm install                 # installs backend + frontend (npm workspaces)
 cp .env.example .env        # optional; every value has a safe default
-npm run browsers:install    # Chromium for Playwright (needed from Phase 1)
+npm run browsers:install    # Chromium for Playwright (~150 MB, once)
 npm run dev                 # API on :4000, web on :5173
 ```
 
-Open http://localhost:5173. The header should say **"API online, scanner offline"** (expected in
-Phase 0). Check the API directly at http://localhost:4000/health.
+Open http://localhost:5173. The header should say **"API online"**. Click **Try the broken
+sample** to scan `samples/broken-sample.html` (about 1.5 s).
+
+To scan a local site (for example the AccessFix UI itself), start the API with
+`ALLOW_PRIVATE_URLS=true` in `.env`. That is dev-only: the server refuses it in production and
+the UI shows a warning badge while it is on.
 
 ## Scripts (run from the repo root)
 
-| Script                            | What it does                                              |
-| --------------------------------- | --------------------------------------------------------- |
-| `npm run dev`                     | API (node --watch) and web (Vite) together                |
-| `npm test`                        | Vitest in both workspaces                                 |
-| `npm run lint`                    | ESLint 9 (flat config, `jsx-a11y` strict on the frontend) |
-| `npm run format` / `format:check` | Prettier                                                  |
-| `npm run build`                   | Production build of the frontend                          |
-| `npm run browsers:install`        | Download Playwright Chromium                              |
+| Script                            | What it does                                                                 |
+| --------------------------------- | ---------------------------------------------------------------------------- |
+| `npm run dev`                     | API (node --watch) and web (Vite) together                                   |
+| `npm test`                        | Vitest in both workspaces (browser tests skip loudly if Chromium is missing) |
+| `npm run test:browser -w backend` | Only the real-Chromium suites                                                |
+| `npm run test:unit -w backend`    | Only the fast backend unit tests                                             |
+| `npm run lint`                    | ESLint 9 (flat config, `jsx-a11y` strict on the frontend)                    |
+| `npm run format` / `format:check` | Prettier                                                                     |
+| `npm run build`                   | Production build of the frontend                                             |
+| `npm run browsers:install`        | Download Playwright Chromium                                                 |
 
 ## Layout
 

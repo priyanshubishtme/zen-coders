@@ -1,7 +1,7 @@
 const startedAt = Date.now();
 
-/** @param {{ scanner: object, repo: object, llm: object, version: string }} deps */
-export function createHealthController({ scanner, repo, llm, version }) {
+/** @param {{ scanner: object, repo: object, llm: object, config: object, version: string }} deps */
+export function createHealthController({ scanner, repo, llm, config, version }) {
   return {
     async get(_req, res) {
       const browser = await scanner.health().catch(() => 'unknown');
@@ -10,6 +10,10 @@ export function createHealthController({ scanner, repo, llm, version }) {
         version,
         uptimeSec: Math.round((Date.now() - startedAt) / 1000),
         checks: { browser, store: repo.kind, llm: llm.enabled ? 'on' : 'off' },
+        limits: {
+          maxHtmlBytes: config.MAX_HTML_BYTES,
+          privateUrlsAllowed: config.ALLOW_PRIVATE_URLS,
+        },
       });
     },
   };

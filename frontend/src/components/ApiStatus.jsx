@@ -1,6 +1,4 @@
-import { useEffect, useState } from 'react';
-import { CircleCheck, CircleAlert, CircleDashed } from 'lucide-react';
-import { getHealth } from '@/lib/api.js';
+import { CircleAlert, CircleCheck, CircleDashed } from 'lucide-react';
 
 const STATES = {
   checking: { Icon: CircleDashed, label: 'Checking API', className: 'text-muted-foreground' },
@@ -9,20 +7,11 @@ const STATES = {
   down: { Icon: CircleAlert, label: 'API unreachable', className: 'text-critical' },
 };
 
-/** Status is always icon + text, never color alone. */
-export function ApiStatus() {
-  const [state, setState] = useState('checking');
-
-  useEffect(() => {
-    let active = true;
-    getHealth()
-      .then((h) => active && setState(h.status === 'ok' ? 'ok' : 'degraded'))
-      .catch(() => active && setState('down'));
-    return () => {
-      active = false;
-    };
-  }, []);
-
+/**
+ * Status is always icon + text, never colour alone.
+ * @param {{ state: keyof typeof STATES }} props
+ */
+export function ApiStatus({ state }) {
   const { Icon, label, className } = STATES[state];
   return (
     <p role="status" className={`flex items-center gap-1.5 text-sm ${className}`}>

@@ -8,6 +8,8 @@
     "dev": "node --watch --env-file-if-exists=../.env src/server.js",
     "start": "node --env-file-if-exists=../.env src/server.js",
     "test": "vitest run",
+    "test:unit": "vitest run --exclude tests/browser/**",
+    "test:browser": "vitest run tests/browser",
     "test:watch": "vitest"
   },
   "dependencies": {

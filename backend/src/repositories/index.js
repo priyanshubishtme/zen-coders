@@ -1,10 +1,14 @@
 import { createMemoryScanRepository } from './memoryScanRepository.js';
 
 /**
- * Pick the store. Mongo arrives in Phase 4; until then, and whenever Mongo is
- * unreachable, the app runs on the in-memory adapter.
- * @param {{ STORE: 'memory' | 'mongo' }} _config
+ * Pick the store. The Mongo adapter is a stub until Phase 4, so STORE=mongo
+ * still runs on memory (with a warning) rather than failing every request.
+ * @param {{ STORE: 'memory' | 'mongo', STORE_MAX_SCANS: number }} config
+ * @param {{ warn: Function }} [logger]
  */
-export function createRepository(_config) {
-  return createMemoryScanRepository();
+export function createRepository(config, logger) {
+  if (config.STORE === 'mongo') {
+    logger?.warn('STORE=mongo is not implemented yet (Phase 4); using the in-memory store.');
+  }
+  return createMemoryScanRepository({ maxScans: config.STORE_MAX_SCANS });
 }

@@ -8,21 +8,32 @@ Every error uses the envelope in [03-architecture.md#error-model](03-architectur
 
 ## Endpoints
 
-| Method | Path                 | Purpose                                   | Success                     | Phase                 |
-| ------ | -------------------- | ----------------------------------------- | --------------------------- | --------------------- |
-| `GET`  | `/health`            | Liveness + dependency status              | `200 HealthResponse`        | 0 (live)              |
-| `POST` | `/scans`             | Scan pasted HTML (or a URL, Phase 2)      | `201 Scan`                  | 1                     |
-| `GET`  | `/scans/:id`         | Fetch a scan                              | `200 Scan`                  | 1                     |
-| `POST` | `/scans/:id/repairs` | Propose one Repair per selected violation | `200 CreateRepairsResponse` | 1                     |
-| `POST` | `/scans/:id/verify`  | Apply repairs to a copy, re-scan, compare | `200 VerificationResult`    | 1                     |
-| `GET`  | `/scans/:id/report`  | Report as `json`, `md` or `html`          | `200`                       | 1 (json), 5 (md/html) |
-| `GET`  | `/usage`             | Token and scan usage since process start  | `200 UsageResponse`         | 1 (zeros), 3 (real)   |
+| Method | Path                 | Purpose                                        | Success                     | Status                            |
+| ------ | -------------------- | ---------------------------------------------- | --------------------------- | --------------------------------- |
+| `GET`  | `/health`            | Liveness, dependency status, limits            | `200 HealthResponse`        | Live                              |
+| `POST` | `/scans`             | Validate input and start a scan (HTML or URL)  | `202 ScanAccepted`          | Live (Phase 1)                    |
+| `GET`  | `/scans/:id`         | Poll a scan: `stage`, then results             | `200 Scan`                  | Live (Phase 1)                    |
+| `GET`  | `/usage`             | Scan count and token usage since process start | `200 UsageResponse`         | Live (tokens are 0 until Phase 3) |
+| `POST` | `/scans/:id/repairs` | Propose one Repair per selected violation      | `200 CreateRepairsResponse` | 501 until Phase 2                 |
+| `POST` | `/scans/:id/verify`  | Apply repairs to a copy, re-scan, compare      | `200 VerificationResult`    | 501 until Phase 2                 |
+| `GET`  | `/scans/:id/report`  | Report as `json`, `md` or `html`               | `200`                       | 501 until Phase 2/5               |
 
 Until a route is implemented it returns `501 NOT_IMPLEMENTED`. Validation still runs first, so
 clients can integrate against the real error behaviour today.
 
-Rate limits: `POST` routes share a per-IP limit (`RATE_LIMIT_RPM`, default 30/min) and return
-standard `RateLimit` headers.
+### Scan lifecycle (polling)
+
+1. `POST /scans` validates the body (Zod), the HTML size and the URL safety check (scheme, DNS,
+   private ranges) **before** answering. Failures come back immediately as 4xx.
+2. On success: `202` with `{ id, status: "queued", stage: "queued" }` and a `Location` header.
+3. Poll `GET /scans/:id` (the UI uses 500 ms). `stage` moves through
+   `queued -> loading -> rendering -> checking -> normalizing -> done`, or ends in `failed`.
+4. When `status` is `completed` or `failed`, stop polling. A failed scan carries a typed
+   `error: { code, message }` (for example `SCAN_TIMEOUT`, `FETCH_FAILED`, `UNSUPPORTED_INPUT`).
+
+Rate limits: every route shares a per-IP limit (`RATE_LIMIT_RPM`, default 300/min, enough for
+polling). `POST` routes also have a stricter per-IP limit (`SCAN_RATE_LIMIT_RPM`, default 10/min).
+Both return standard draft-8 `RateLimit` headers; the UI reads `t=` for its countdown.
 
 ## Requests
 
@@ -30,8 +41,10 @@ standard `RateLimit` headers.
 // POST /scans
 CreateScanBody = z.object({
   input: z.discriminatedUnion('type', [
-    z.object({ type: z.literal('html'), html: z.string().min(1) }), // <= MAX_HTML_BYTES, else 413
-    z.object({ type: z.literal('url'), url: z.url({ protocol: /^https?$/ }) }), // 422 until Phase 2
+    // <= MAX_HTML_BYTES (413), not binary (422 UNSUPPORTED_INPUT), NUL bytes stripped
+    z.object({ type: z.literal('html'), html: z.string().min(1) }),
+    // http(s) only, no credentials, must not resolve to a private/reserved address (422 URL_BLOCKED)
+    z.object({ type: z.literal('url'), url: z.url({ protocol: /^https?$/ }).max(2048) }),
   ]),
   options: z
     .object({
@@ -85,12 +98,17 @@ Violation = z.object({
   wcag: z.object({
     criteria: z.array(z.string().regex(/^\d\.\d+\.\d+$/)), // e.g. ["1.4.3"]
     level: z.enum(['A', 'AA', 'AAA']).nullable(),
+    // One chip per criterion, linking to the W3C "Understanding" page.
+    refs: z.array(
+      z.object({ sc: z.string(), name: z.string(), level: WcagLevel.nullable(), url: z.url() }),
+    ),
   }),
-  title: z.string(), // plain language
-  explanation: z.string(), // who is affected and why
-  helpUrl: z.url().nullable(),
+  title: z.string(), // plain language, from our template library (no LLM)
+  explanation: z.string(), // why it matters
+  whoItAffects: z.string(), // e.g. "Blind and low-vision people using screen readers"
+  helpUrl: z.url().nullable(), // axe rule docs; null for our own checks
   node: z.object({
-    target: z.array(z.string()).min(1), // axe selector path
+    target: z.array(z.string()).min(1), // one selector per frame; shadow DOM hops joined with " >>> "
     html: z.string().max(2000), // snippet, truncated
     failureSummary: z.string().nullable(),
   }),
@@ -98,6 +116,17 @@ Violation = z.object({
   status: z.enum(['open', 'fix-proposed', 'fixed-verified', 'fix-failed', 'manual-review']),
 });
 ```
+
+- `id` is `v_` + a hash of (input hash, rule, outcome, target), so it is stable for the same input.
+- `signature` is `ruleId:` + a hash of the element's pattern: tag, identity attributes (`type`,
+  `role`, `name`, `alt`, `title`, `placeholder`, `aria-*`, `href`/`src` reduced to the file
+  name), and short normalized text. Ids, classes, `data-*` and digits are ignored, so ten
+  identical icon buttons share one signature (doc 07 dedupe).
+- Our own checks use `source: "accessfix"` and rule ids prefixed `afx-` (`afx-heading-skip`,
+  `afx-heading-multiple-h1`, `afx-heading-missing-h1`, `afx-heading-empty`,
+  `afx-link-ambiguous`). They are always advisory. When axe flags the same element for the
+  overlapping rule (`heading-order`, `page-has-heading-one`, `empty-heading`), only the axe
+  result is kept.
 
 ### Repair
 
@@ -193,20 +222,34 @@ ScanTokenSummary = TokenUsage.extend({
 
 ```js
 Scan = z.object({
-  id: Id,
+  id: Id, // "s_" + 12 random chars
   status: z.enum(['queued', 'scanning', 'completed', 'failed']),
-  input: { type: 'html', bytes } | { type: 'url', url }, // raw HTML is not echoed back
+  stage: z.enum(['queued', 'loading', 'rendering', 'checking', 'normalizing', 'done', 'failed']),
+  input: { type: 'html', bytes } | { type: 'url', url }, // raw HTML is never stored or echoed
+  inputHash: z.string().length(64), // sha256("html\n" + html) or sha256("url\n" + url)
   options: ScanOptions,
-  violations: z.array(Violation), // scored
-  manualReview: z.array(Violation), // axe "incomplete"
-  advisory: z.array(Violation), // best-practice
-  score: Score.nullable(),
+  violations: z.array(Violation), // WCAG A/AA failures
+  manualReview: z.array(Violation), // axe "incomplete": a person must decide
+  advisory: z.array(Violation), // best-practice + our own checks
+  headingOutline: z.array(z.object({ level, text, target })),
+  page: z.object({ finalUrl, title, settled }).nullable(), // settled=false: network never went quiet
+  network: z
+    .object({
+      requests: count, // unique URLs the page asked for
+      blocked: count, // unique URLs not loaded: blocked for safety, over limits, or failed
+      blockedSamples: z.array(z.object({ url, reason })), // first 10
+    })
+    .nullable(),
+  engine: z.object({ axeVersion }).nullable(),
+  timings: { queueMs, loadMs, renderMs, axeMs, checksMs, normalizeMs, totalMs }, // all nullable ms
+  score: Score.nullable(), // null in Phase 1
   tokenUsage: ScanTokenSummary,
   error: z.object({ code, message }).nullable(),
   createdAt,
   completedAt,
-  durationMs,
 });
+
+ScanAccepted = Scan.pick({ id, status, stage }); // 202 body of POST /scans
 ```
 
 ## Other responses
@@ -220,6 +263,10 @@ HealthResponse = z.object({
     browser: z.enum(['up', 'down', 'unknown']),
     store: z.enum(['memory', 'mongo']),
     llm: z.enum(['off', 'on', 'circuit-open']),
+  }),
+  limits: z.object({
+    maxHtmlBytes: z.number(), // the UI validates against this before sending
+    privateUrlsAllowed: z.boolean(), // dev/test only; the UI shows a warning badge
   }),
 });
 
@@ -238,39 +285,68 @@ UsageResponse = z.object({
 });
 ```
 
-## Example: scan
+## Example: scan the broken sample
 
 ```http
 POST /scans
-{ "input": { "type": "html", "html": "<html><body><img src=\"a.jpg\"></body></html>" } }
+{ "input": { "type": "html", "html": "<!doctype html><html>…" } }
+
+202 Accepted
+Location: /scans/s_Xk2…
+{ "id": "s_Xk2…", "status": "queued", "stage": "queued" }
 ```
+
+Polling `GET /scans/s_Xk2…` until `status` is `completed` (about 1.5 s for
+`samples/broken-sample.html`). Real output, trimmed:
 
 ```json
 {
-  "id": "s_8f3k2",
   "status": "completed",
-  "input": { "type": "html", "bytes": 46 },
+  "stage": "done",
   "violations": [
     {
-      "id": "v_1",
-      "ruleId": "image-alt",
+      "id": "v_b8872a833449",
+      "ruleId": "button-name",
       "source": "axe",
       "outcome": "violation",
       "category": "wcag",
       "impact": "critical",
-      "wcag": { "criteria": ["1.1.1"], "level": "A" },
-      "title": "Image has no text alternative",
-      "explanation": "Screen reader users hear only the file name or nothing at all.",
-      "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/image-alt",
-      "node": { "target": ["img"], "html": "<img src=\"a.jpg\">", "failureSummary": "..." },
-      "signature": "image-alt:7c1e",
+      "wcag": {
+        "criteria": ["4.1.2"],
+        "level": "A",
+        "refs": [
+          {
+            "sc": "4.1.2",
+            "name": "Name, Role, Value",
+            "level": "A",
+            "url": "https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html"
+          }
+        ]
+      },
+      "title": "Button has no name",
+      "explanation": "This button has no text a screen reader can announce, so people hear only \"button\" and cannot tell what it does.",
+      "whoItAffects": "Screen reader and voice-control users",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/button-name",
+      "node": {
+        "target": ["button[type=\"button\"]"],
+        "html": "<button type=\"button\">…</button>",
+        "failureSummary": "Fix any of the following: …"
+      },
+      "signature": "button-name:5b9693ad1e1e",
       "status": "open"
     },
-    "... html-has-lang, document-title ..."
+    "… color-contrast, html-has-lang, image-alt, label, link-name …"
   ],
-  "manualReview": [],
-  "advisory": ["... landmark-one-main, region ..."],
-  "score": { "value": 38, "standard": "WCAG 2.2 AA", "...": "..." }
+  "manualReview": ["… color-contrast on text over a gradient …"],
+  "advisory": ["… heading-order, afx-heading-multiple-h1, afx-link-ambiguous …"],
+  "headingOutline": [
+    { "level": 1, "text": "Weekly specials", "target": ["h1"] },
+    { "level": 3, "text": "Sourdough", "target": ["h3"] },
+    { "level": 1, "text": "Newsletter", "target": ["main > h1:nth-of-type(2)"] }
+  ],
+  "network": { "requests": 0, "blocked": 0, "blockedSamples": [] },
+  "timings": { "loadMs": 13, "renderMs": 498, "axeMs": 721, "checksMs": 6, "totalMs": 1407 },
+  "score": null
 }
 ```
 

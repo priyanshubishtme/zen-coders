@@ -9,9 +9,21 @@ const violation = {
   outcome: 'violation',
   category: 'wcag',
   impact: 'critical',
-  wcag: { criteria: ['1.1.1'], level: 'A' },
+  wcag: {
+    criteria: ['1.1.1'],
+    level: 'A',
+    refs: [
+      {
+        sc: '1.1.1',
+        name: 'Non-text Content',
+        level: 'A',
+        url: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html',
+      },
+    ],
+  },
   title: 'Image has no text alternative',
   explanation: 'Screen reader users hear nothing useful for this image.',
+  whoItAffects: 'Blind and low-vision people using screen readers',
   helpUrl: 'https://dequeuniversity.com/rules/axe/4.11/image-alt',
   node: { target: ['img.hero'], html: '<img class="hero" src="a.jpg">', failureSummary: null },
   signature: 'image-alt:abc123',
@@ -24,7 +36,7 @@ describe('contracts', () => {
   });
 
   it('rejects a Violation with a malformed WCAG criterion', () => {
-    const bad = { ...violation, wcag: { criteria: ['1.1'], level: 'A' } };
+    const bad = { ...violation, wcag: { ...violation.wcag, criteria: ['1.1'] } };
     expect(Violation.safeParse(bad).success).toBe(false);
   });
 

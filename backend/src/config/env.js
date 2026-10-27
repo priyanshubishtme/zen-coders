@@ -14,8 +14,19 @@ const EnvSchema = z.object({
   MAX_HTML_BYTES: z.coerce.number().int().positive().default(512_000),
   SCAN_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
-  RATE_LIMIT_RPM: z.coerce.number().int().positive().default(30),
+  RATE_LIMIT_RPM: z.coerce.number().int().positive().default(300),
+  SCAN_RATE_LIMIT_RPM: z.coerce.number().int().positive().default(10),
   BROWSER_MAX_CONTEXTS: z.coerce.number().int().positive().default(4),
+  SCAN_QUEUE_MAX: z.coerce.number().int().nonnegative().default(20),
+  NETWORK_IDLE_MAX_MS: z.coerce.number().int().positive().default(5_000),
+
+  ALLOW_PRIVATE_URLS: bool,
+  MAX_RESPONSE_BYTES: z.coerce.number().int().positive().default(15_000_000),
+  MAX_SUBREQUESTS: z.coerce.number().int().positive().default(100),
+  MAX_REDIRECTS: z.coerce.number().int().nonnegative().default(5),
+  SUBREQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+
+  STORE_MAX_SCANS: z.coerce.number().int().positive().default(200),
 
   INCLUDE_AAA: bool,
 
@@ -50,6 +61,9 @@ export function loadConfig(source = process.env) {
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
     throw new Error(`Invalid configuration: ${issues}`);
+  }
+  if (parsed.data.ALLOW_PRIVATE_URLS && parsed.data.NODE_ENV === 'production') {
+    throw new Error('Invalid configuration: ALLOW_PRIVATE_URLS cannot be enabled in production.');
   }
   return Object.freeze(parsed.data);
 }

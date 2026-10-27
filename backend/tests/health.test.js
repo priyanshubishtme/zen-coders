@@ -10,9 +10,10 @@ describe('GET /health', () => {
     expect(HealthResponse.safeParse(res.body).success).toBe(true);
   });
 
-  it('reports LLM off and the memory store by default', async () => {
+  it('reports LLM off, memory store and private URLs blocked by default', async () => {
     const res = await request(testApp()).get('/health');
     expect(res.body.checks).toMatchObject({ llm: 'off', store: 'memory' });
+    expect(res.body.limits.privateUrlsAllowed).toBe(false);
   });
 
   it('is degraded, not failing, when the browser is down', async () => {
