@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createScan, getScan } from '@/lib/api.js';
+import { rememberScan } from '@/lib/historyStore.js';
 
 export const POLL_MS = 500;
 
@@ -33,6 +34,12 @@ export function useScan({ pollMs = POLL_MS } = {}) {
           const scan = await getScan(accepted.id, ctrl.signal);
           if (ctrl.signal.aborted) return;
           if (scan.status === 'completed' || scan.status === 'failed') {
+            rememberScan({
+              id: scan.id,
+              createdAt: scan.createdAt,
+              score: scan.score?.value ?? null,
+              label: scan.page?.title || (scan.input.type === 'url' ? scan.input.url : 'Pasted HTML'),
+            });
             setState({ phase: 'done', scan, error: null });
             return;
           }

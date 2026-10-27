@@ -75,8 +75,30 @@ until the core loop (Phase 1) works end to end.
 - **Plug-in:** a thin client over the public API (or the Docker image for self-hosting). It
   builds or serves the site, scans the listed pages, and posts a PR comment with the score
   change, new violations and suggested diffs. `--fail-under 90` and `--fail-on-regression` gates.
-- **Contract:** none beyond API keys (Team tier).
+- **Contract:** Team-tier API key. Inputs and a comment body, not implemented:
+
+```yaml
+# .github/workflows/accessfix.yml  (not shipped)
+- uses: accessfix/scan-action@v1
+  with:
+    api-url: ${{ vars.ACCESSFIX_URL }}
+    api-key: ${{ secrets.ACCESSFIX_API_KEY }}
+    urls: |
+      https://staging.example.com/
+    fail-under: 90
+    fail-on-regression: true
+    comment-on-pr: true
+```
+
+The action would `POST /scans` for each URL, poll `GET /scans/:id`, optionally `POST /repairs` +
+`POST /verify`, then comment `before → after`, new violations, and patch diffs. Show only the
+delta from the base branch.
 - **Risk:** noisy comments. Show only the change from the base branch.
+
+Extension points already in the repo as stubs (no behaviour):
+
+- `backend/src/services/scanner/strategies.js` — crawler, SPA hydration, auth cookie, keyboard/focus
+- `backend/src/services/repair/sourceMap.js` — `mapPatchToSource()` returns null
 
 ## Multi-language
 

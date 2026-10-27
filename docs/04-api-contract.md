@@ -17,7 +17,8 @@ Every error uses the envelope in [03-architecture.md#error-model](03-architectur
 | `POST` | `/scans/:id/repairs` | Propose one Repair per selected violation      | `200 CreateRepairsResponse` | Live (Phase 2)                    |
 | `POST` | `/scans/:id/verify`  | Apply repairs to a copy, re-scan, compare      | `200 VerificationResult`    | Live (Phase 2)                    |
 | `GET`  | `/scans/:id/patched.html` | Latest patched source (attachment)        | `200 text/html`             | Live (Phase 2)                    |
-| `GET`  | `/scans/:id/report`  | Report as `json`, `md` or `html`               | `200`                       | 501 until Phase 5                 |
+| `GET`  | `/scans`             | Capability list: `?ids=` (max 50)              | `200 { scans }`             | Live (Phase 4)                    |
+| `GET`  | `/scans/:id/report`  | Report as `json`, `md` or `html`               | `200`                       | Live (Phase 4). HTML is escaped, script-free, CSP + attachment. |
 
 Until a route is implemented it returns `501 NOT_IMPLEMENTED`. Validation still runs first, so
 clients can integrate against the real error behaviour today.
@@ -80,11 +81,18 @@ VerifyBody = z.object({
 // outcome "not-applied", detail "Fill in the placeholder first". Placeholders never count as fixes.
 // An LLM repair that is not in acceptedRepairIds is not-applied: "Accept the AI draft first".
 
-// GET /scans/:id/report
+// GET /scans?ids=s_…,s_…  (1–50 capability ids; no global list)
+ListScansQuery = z.object({
+  ids: z.string().min(1).max(4000).transform((raw) => raw.split(',').map((s) => s.trim()).filter(Boolean)).pipe(z.array(Id).min(1).max(50)),
+});
+
+// GET /scans/:id/report  — HTML is script-free, escaped, CSP + Content-Disposition
 ReportQuery = z.object({ format: z.enum(['json', 'md', 'html']).default('json') });
 
 // :id everywhere
 ScanIdParams = z.object({ id: Id }); // Id = z.string().min(1).max(64)
+// Scan ids are `s_` + 21+ URL-safe nanoid characters. They are capability URLs:
+// anyone who has the id can read the scan and report. Links expire after SCAN_TTL_DAYS.
 ```
 
 ## Core objects

@@ -13,6 +13,8 @@ Start here. Read in order; each doc is short.
 | 07  | [LLM cost strategy](07-llm-cost-strategy.md)        | Budgets, dedupe, caching, rate limits, fallbacks            |
 | 08  | [UX spec](08-ux-spec.md)                            | Journey, screens, states, design tokens                     |
 | 09  | [Roadmap and future pathways](09-roadmap-future.md) | How each hard problem plugs in later                        |
+| 10  | [Deploy](10-deploy.md)                              | Static UI + Chromium API, Mongo, Docker                     |
+| 11  | [Demo script](11-demo-script.md)                    | Three-minute walkthrough                                    |
 
 ## Decisions locked in Phase 0
 
@@ -36,8 +38,8 @@ Start here. Read in order; each doc is short.
 | 1     | Scan pipeline: pasted HTML **and URL** (SSRF-hardened), browser pool, axe + our checks, normalizer, plain-language templates, repository (memory + Mongo stub), scan UI with all states | The broken sample returns the expected violations in under 5 s; hostile input never crashes | Done   |
 | 2     | Repairs (deterministic first), verification by re-scan, score, before/after view                                                                                                        | Verified fixes raise the score with zero regressions, LLM off                               | Done   |
 | 3     | LLM provider, token accounting, cache, batching, rate limiting                                                                                                                          | Tokens per verified fix shown; app still works with LLM off                                 | Done   |
-| 4     | MongoDB adapter, scan history, Recharts trends                                                                                                                                          | Same contract tests pass on both adapters                                                   |        |
-| 5     | Polish, shareable report, `/business` page, demo hardening                                                                                                                              | We pass our own audit with score 100 and zero regressions                                   |        |
+| 4     | Mongo adapter, jobs, report, `/business`, history + trend, self-scan proof, deploy notes                                                                                                 | Fresh clone runs with `npm run dev`; Mongo contract tests pass when a URI is set            | Done   |
+| 5     | Polish, PDF audit pack, GitHub Action, source mapping                                                                                                                                     | Out of this hackathon                                                                       |        |
 
 ## Deliberately out of scope (until the core loop works)
 

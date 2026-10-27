@@ -16,4 +16,9 @@ describe('loadConfig', () => {
   it('fails fast on invalid values', () => {
     expect(() => loadConfig({ LLM_PROVIDER: 'gpt' })).toThrow(/LLM_PROVIDER/);
   });
+
+  it('refuses STORE=mongo without a URI', () => {
+    expect(() => loadConfig({ STORE: 'mongo' })).toThrow(/MONGODB_URI/);
+  });
 });
+

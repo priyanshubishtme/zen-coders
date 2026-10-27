@@ -47,6 +47,8 @@ const EnvSchema = z.object({
 
   STORE: z.enum(['memory', 'mongo']).default('memory'),
   MONGODB_URI: z.string().default(''),
+  /** Shared report links and stored scans expire after this many days. */
+  SCAN_TTL_DAYS: z.coerce.number().int().positive().default(30),
 });
 
 /** @typedef {z.infer<typeof EnvSchema>} Config */
@@ -70,6 +72,9 @@ export function loadConfig(source = process.env) {
   if (!('TRUST_PROXY' in cleaned) && data.NODE_ENV === 'production') data.TRUST_PROXY = true;
   if (data.ALLOW_PRIVATE_URLS && data.NODE_ENV === 'production') {
     throw new Error('Invalid configuration: ALLOW_PRIVATE_URLS cannot be enabled in production.');
+  }
+  if (data.STORE === 'mongo' && !data.MONGODB_URI) {
+    throw new Error('Invalid configuration: MONGODB_URI is required when STORE=mongo.');
   }
   return Object.freeze(data);
 }

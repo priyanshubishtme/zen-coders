@@ -81,5 +81,6 @@ export function createApp(config, overrides = {}) {
 
   app.locals.orchestrator = orchestrator;
   app.locals.scanner = scanner;
+  app.locals.repo = repo;
   return app;
 }

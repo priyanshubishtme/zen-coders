@@ -119,3 +119,10 @@ export const verifyRepairs = (id, body, signal) =>
 
 export const patchedHtmlUrl = (id) =>
   `${API_BASE_URL}/scans/${encodeURIComponent(id)}/patched.html`;
+
+/** @param {string[]} ids */
+export const listScans = (ids, signal) =>
+  request(`/scans?ids=${ids.map(encodeURIComponent).join(',')}`, { signal });
+
+export const getReport = (id, format = 'json', signal) =>
+  request(`/scans/${encodeURIComponent(id)}/report?format=${format}`, { signal });

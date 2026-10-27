@@ -5,9 +5,9 @@ preview, and see a **verified** before/after score. Fix-first, no overlays, work
 
 Hackathon problem statement PS 11: "Web Accessibility Auditor + Fix-Suggester".
 
-> **Status: Phase 2 (repair + verify + score).** Paste HTML or scan a URL, get WCAG 2.2 A/AA issues,
-> apply deterministic source fixes to an isolated copy, re-scan, and watch the score move. Works
-> with the LLM off. Start with [`docs/`](docs/README.md).
+> **Status: Phase 4.** Paste HTML or a URL, get verified source fixes, optional AI drafts, a
+> shareable report, scan history, and a `/business` page. Memory store by default; Mongo when you
+> set `STORE=mongo`. Start with [`docs/`](docs/README.md).
 
 ## Quick start
 
@@ -63,7 +63,7 @@ the UI shows a warning badge while it is on.
 │   │   │   ├── verifier/      apply to copy, re-scan, diff
 │   │   │   ├── scorer/        pure score function
 │   │   │   └── llm/           provider interface (none | openai-compatible | mock)
-│   │   ├── repositories/      ScanRepository contract, in-memory adapter (Mongo in Phase 4)
+│   │   ├── repositories/      ScanRepository contract, memory + Mongo adapters
 │   │   └── utils/             errors, logger
 │   └── tests/                 Vitest + Supertest (fixtures/ for rule HTML)
 └── frontend/
@@ -87,3 +87,12 @@ the UI shows a warning badge while it is on.
 
 The score covers automated checks only. It is not a WCAG conformance claim. See
 [docs/06-scoring-spec.md](docs/06-scoring-spec.md).
+
+Optional Mongo (not required for `npm run dev` or `npm test`):
+
+```bash
+docker compose up -d mongo
+# then STORE=mongo and MONGODB_URI=mongodb://127.0.0.1:27017/accessfix in .env
+```
+
+See [docs/10-deploy.md](docs/10-deploy.md) and [docs/11-demo-script.md](docs/11-demo-script.md).

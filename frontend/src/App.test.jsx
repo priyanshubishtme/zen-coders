@@ -28,6 +28,11 @@ describe('App shell', () => {
     vi.stubGlobal('fetch', mockApi({ healthBody: new Error('offline') }));
     renderApp();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(
+      screen.getByRole('heading', {
+        name: 'Other tools tell you your site is broken. AccessFix fixes it.',
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('main')).toHaveAttribute('id', 'main');
     expect(screen.getByRole('link', { name: /skip to main content/i })).toHaveAttribute(
       'href',

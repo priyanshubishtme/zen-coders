@@ -8,6 +8,16 @@ import { ScanTokenSummary } from './tokenUsage.js';
 
 export const ScanIdParams = z.object({ id: Id });
 
+/** Capability list: only the IDs the client already has. Cap 50. */
+export const ListScansQuery = z.object({
+  ids: z
+    .string()
+    .min(1)
+    .max(4000)
+    .transform((raw) => raw.split(',').map((s) => s.trim()).filter(Boolean))
+    .pipe(z.array(Id).min(1).max(50)),
+});
+
 export const CreateScanBody = z.object({
   input: ScanInput,
   options: ScanOptions,

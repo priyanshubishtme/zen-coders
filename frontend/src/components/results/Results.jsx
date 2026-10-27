@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button.jsx';
 import { ErrorPanel } from '@/components/ErrorPanel.jsx';
 import { useRepairs } from '@/hooks/useRepairs.js';
 import { useSeverityParam } from '@/hooks/useSeverityParam.js';
+import { Link } from '@/lib/Link.jsx';
 import { SCORE_DISCLAIMER, applicableRepairs } from '@/lib/score.js';
 import { groupByRule } from '@/lib/severity.js';
 import { HeadingOutline } from './HeadingOutline.jsx';
@@ -53,6 +54,14 @@ function ScoreCard({ scan, verification, headingRef }) {
           ` · scanned in ${(scan.timings.totalMs / 1000).toFixed(1)} s`}
       </p>
       <p className="mt-2 text-xs text-muted-foreground">{SCORE_DISCLAIMER}</p>
+      <p className="mt-3">
+        <Link href={`/scans/${scan.id}/report`} className="text-sm text-primary underline">
+          Open shareable report
+        </Link>
+        <span className="ml-2 text-xs text-muted-foreground">
+          Anyone with the link can view it. Links expire after 30 days.
+        </span>
+      </p>
       {score && <ScoreExplain score={score} />}
     </div>
   );

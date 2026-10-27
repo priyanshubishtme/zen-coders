@@ -22,6 +22,45 @@ describe('POST /scans + GET /scans/:id', () => {
     expect(got.body.violations[0].ruleId).toBe('image-alt');
     expect(got.body.inputHash).toMatch(/^[a-f0-9]{64}$/);
     expect(JSON.stringify(got.body)).not.toContain('<p>hi</p>');
+    expect(res.body.id).toMatch(/^s_[A-Za-z0-9_-]{21,}$/);
+  });
+
+  it('returns the same scan for a repeated Idempotency-Key', async () => {
+    const app = testApp();
+    const body = { input: { type: 'html', html: '<p>idem</p>' } };
+    const a = await request(app).post('/scans').set('Idempotency-Key', 'demo-1').send(body);
+    const b = await request(app).post('/scans').set('Idempotency-Key', 'demo-1').send(body);
+    expect(a.body.id).toBe(b.body.id);
+    await app.locals.orchestrator.idle();
+  });
+
+  it('lists only the requested scan ids', async () => {
+    const app = testApp();
+    const a = await request(app).post('/scans').send({ input: { type: 'html', html: '<p>a</p>' } });
+    await request(app).post('/scans').send({ input: { type: 'html', html: '<p>b</p>' } });
+    await app.locals.orchestrator.idle();
+    const listed = await request(app).get(`/scans`).query({ ids: `${a.body.id},nope` });
+    expect(listed.status).toBe(200);
+    expect(listed.body.scans.map((s) => s.id)).toEqual([a.body.id]);
+  });
+
+  it('refuses GET /scans without ids (no global listing)', async () => {
+    const res = await request(testApp()).get('/scans');
+    expect(res.status).toBe(400);
+  });
+
+  it('serves an escaped HTML report as an attachment with a strict CSP', async () => {
+    const app = testApp();
+    const created = await request(app)
+      .post('/scans')
+      .send({ input: { type: 'html', html: '<p>hi</p>' } });
+    await app.locals.orchestrator.idle();
+    const res = await request(app).get(`/scans/${created.body.id}/report`).query({ format: 'html' });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-disposition']).toMatch(/attachment/);
+    expect(res.headers['content-security-policy']).toMatch(/default-src 'none'/);
+    expect(res.text).toContain('AccessFix report');
+    expect(res.text).not.toContain('<script>');
   });
 
   it('accepts a public URL after the safety check', async () => {
@@ -82,9 +121,10 @@ describe('repairs and verify preconditions', () => {
     await app.locals.orchestrator.idle();
   });
 
-  it('still answers 501 for the report (Phase 5)', async () => {
+  it('returns 404 for a report whose scan has expired or never existed', async () => {
     const res = await request(testApp()).get('/scans/abc/report');
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
   });
 });
 

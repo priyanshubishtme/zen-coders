@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createMemoryScanRepository } from '../src/repositories/memoryScanRepository.js';
 import { createOrchestrator } from '../src/services/orchestrator/index.js';
 import { AppError } from '../src/utils/errors.js';
-import { fakeLookup, fakeScanner, testConfig } from './helpers.js';
+import { fakeLookup, fakeRaw, fakeScanner, testConfig } from './helpers.js';
 
 const OPTIONS = { includeAAA: false, includeBestPractice: true };
 
@@ -80,6 +80,21 @@ describe('orchestrator', () => {
       stage: 'failed',
       error: { code: 'SCAN_TIMEOUT' },
     });
+    expect(scanner.calls).toHaveLength(1);
+  });
+
+  it('retries unexpected crashes once, then completes', async () => {
+    let n = 0;
+    const scanner = fakeScanner(async () => {
+      n += 1;
+      if (n === 1) throw new TypeError('boom');
+      return fakeRaw();
+    });
+    const { orch } = setup({ scanner });
+    const { id } = await orch.createScan(html('<p>x</p>'));
+    await orch.idle();
+    expect(n).toBe(2);
+    expect((await orch.getScan(id)).status).toBe('completed');
   });
 
   it('hides unexpected errors behind INTERNAL', async () => {

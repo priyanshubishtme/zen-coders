@@ -13,13 +13,15 @@
  * @property {(scanId: string, repairs: object[]) => Promise<void>} saveRepairs        Phase 2
  * @property {(scanId: string) => Promise<object[]>} listRepairs                       Phase 2
  * @property {(result: object) => Promise<void>} saveVerification                      Phase 2
- * @property {(scanId: string) => Promise<object[]>} listVerifications                 Phase 2
+ * @property {(scanId: string) => Promise<object[]>} listVerifications
+ * @property {(ids: string[]) => Promise<object[]>} listByIds  capability-list; unknown ids omitted
  */
 
 export const REPOSITORY_METHODS = Object.freeze([
   'saveScan',
   'updateScan',
   'getScan',
+  'listByIds',
   'recordUsage',
   'usageSummary',
   'saveRepairs',

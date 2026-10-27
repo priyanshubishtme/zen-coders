@@ -3,6 +3,7 @@ import { loadConfig } from './config/env.js';
 
 const config = loadConfig();
 const app = createApp(config);
+await app.locals.repo?.ready;
 
 const server = app.listen(config.PORT, () => {
   console.log(`AccessFix API listening on http://localhost:${config.PORT}`);
@@ -15,6 +16,7 @@ async function shutdown() {
   server.close();
   await app.locals.orchestrator.idle();
   await app.locals.scanner.close();
+  await app.locals.repo?.close?.();
   process.exit(0);
 }
 

@@ -1,12 +1,19 @@
 import { nanoid } from 'nanoid';
 import { createSourceCache } from '../../repositories/sourceCache.js';
-import { AppError, NotImplementedError } from '../../utils/errors.js';
+import { AppError } from '../../utils/errors.js';
 import { sha256 } from '../../utils/hash.js';
 import { resolveSafeUrl } from '../../utils/urlSafety.js';
+import { createInProcessQueue } from '../jobs/inProcess.js';
+import { buildReport } from '../report/index.js';
+import { toPublicRepair } from '../repair/index.js';
 import { normalize } from '../scanner/normalize.js';
 import { computeScore } from '../scorer/index.js';
 import { createVerifier } from '../verifier/index.js';
 import { createRepairFlow } from './repairFlow.js';
+
+/** URL-safe, unguessable. `s_` + 21 chars from nanoid. */
+export const SCAN_ID_SIZE = 21;
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** At least 3 control characters making up over 1% of the input means this is not HTML text. */
 const MAX_CONTROL_RATIO = 0.01;
@@ -57,7 +64,8 @@ export function emptyTokenSummary(budget) {
  *   llm?: object }} deps
  */
 export function createOrchestrator({ scanner, repo, config, logger, lookup, verifier, sourceCache, llm }) {
-  const running = new Set();
+  const jobs = createInProcessQueue({ logger });
+  const idempotency = new Map();
   const sources = sourceCache ?? createSourceCache();
   const repairFlow = createRepairFlow({
     repo,
@@ -69,7 +77,7 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
     config,
   });
 
-  async function runScan({ id, input, options, createdAtMs, inputHash }) {
+  async function runScan({ id, input, options, createdAtMs, inputHash }, attempt = 0) {
     const log = logger.child({ scanId: id });
     const timings = {
       queueMs: null,
@@ -129,6 +137,10 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
       );
     } catch (err) {
       const appError = err instanceof AppError ? err : null;
+      if (!appError && attempt === 0) {
+        log.warn({ err: err?.message }, 'scan crashed; retrying once');
+        return runScan({ id, input, options, createdAtMs, inputHash }, 1);
+      }
       if (!appError) log.error({ err }, 'scan crashed');
       else log.warn({ code: appError.code, msg: appError.message }, 'scan failed');
       timings.totalMs = Date.now() - createdAtMs;
@@ -146,7 +158,14 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
 
   return {
     /** Validate, record, start in the background, and return immediately. */
-    async createScan({ input, options }) {
+    async createScan({ input, options }, { idempotencyKey } = {}) {
+      if (idempotencyKey) {
+        const hit = idempotency.get(idempotencyKey);
+        if (hit && hit.expiresAt > Date.now()) {
+          const existing = await repo.getScan(hit.id);
+          if (existing) return { id: existing.id, status: existing.status, stage: existing.stage };
+        }
+      }
       let scanInput;
       let publicInput;
       let hashSource;
@@ -167,7 +186,7 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
 
       const createdAtMs = Date.now();
       const scan = {
-        id: `s_${nanoid(12)}`,
+        id: `s_${nanoid(SCAN_ID_SIZE)}`,
         status: 'queued',
         stage: 'queued',
         input: publicInput,
@@ -197,15 +216,21 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
       };
       await repo.saveScan(scan);
       await repo.recordUsage({ scanId: scan.id, kind: 'scan', at: scan.createdAt });
+      if (idempotencyKey) {
+        idempotency.set(idempotencyKey, { id: scan.id, expiresAt: Date.now() + IDEMPOTENCY_TTL_MS });
+      }
 
-      const job = runScan({
-        id: scan.id,
-        input: scanInput,
-        options,
-        createdAtMs,
-        inputHash: scan.inputHash,
-      }).finally(() => running.delete(job));
-      running.add(job);
+      jobs.enqueue(
+        () =>
+          runScan({
+            id: scan.id,
+            input: scanInput,
+            options,
+            createdAtMs,
+            inputHash: scan.inputHash,
+          }),
+        { label: scan.id },
+      );
       return { id: scan.id, status: scan.status, stage: scan.stage };
     },
 
@@ -213,6 +238,10 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
       const scan = await repo.getScan(id);
       if (!scan) throw new AppError('NOT_FOUND', 'Scan not found. It may have expired.');
       return scan;
+    },
+
+    async listScans(ids) {
+      return repo.listByIds(ids);
     },
 
     async getUsage() {
@@ -234,11 +263,15 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
     proposeRepairs: (scanId, body, ctx) => repairFlow.proposeRepairs(scanId, body, ctx),
     verify: (scanId, body) => repairFlow.verify(scanId, body),
     getPatchedHtml: (scanId) => repairFlow.getPatchedHtml(scanId),
-    getReport: async () => {
-      throw new NotImplementedError('GET /scans/:id/report');
+    async getReport(scanId) {
+      const scan = await repo.getScan(scanId);
+      if (!scan) throw new AppError('NOT_FOUND', 'Scan not found. It may have expired.');
+      const repairs = (await repo.listRepairs(scanId)).map(toPublicRepair);
+      const verifications = await repo.listVerifications(scanId);
+      return buildReport({ scan, repairs, verification: verifications.at(-1) ?? null });
     },
 
     /** Resolves when every in-flight scan has finished (tests, graceful shutdown). */
-    idle: () => Promise.allSettled([...running]),
+    idle: () => jobs.idle(),
   };
 }

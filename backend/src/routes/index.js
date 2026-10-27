@@ -3,6 +3,7 @@ import { validate } from '../middleware/validate.js';
 import {
   CreateRepairsBody,
   CreateScanBody,
+  ListScansQuery,
   ReportQuery,
   ScanIdParams,
   VerifyBody,
@@ -20,6 +21,7 @@ export function createRouter(c, { scanLimiter }) {
   r.get('/usage', c.usage.get);
 
   r.post('/scans', scanLimiter, validate({ body: CreateScanBody }), c.scans.create);
+  r.get('/scans', validate({ query: ListScansQuery }), c.scans.list);
   r.get('/scans/:id', validate({ params: ScanIdParams }), c.scans.get);
   r.post(
     '/scans/:id/repairs',

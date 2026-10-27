@@ -3,6 +3,7 @@ import { FlaskConical, ScanSearch } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Tabs } from '@/components/ui/tabs.jsx';
 import sampleHtml from '../../../samples/broken-sample.html?raw';
+import demoHtml from '../../../samples/demo-script.html?raw';
 
 const DEFAULT_MAX_BYTES = 512_000;
 const kb = (n) => `${(n / 1024).toFixed(n < 10_240 ? 1 : 0)} KB`;
@@ -145,6 +146,18 @@ export function ScanForm({ onSubmit, busy, disabledReason, maxBytes = DEFAULT_MA
         <Button variant="outline" onClick={trySample} disabled={disabled}>
           <FlaskConical aria-hidden="true" className="size-4" />
           Try the broken sample
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setMode('html');
+            setHtml(demoHtml);
+            setError(null);
+            onSubmit({ type: 'html', html: demoHtml });
+          }}
+          disabled={disabled}
+        >
+          Load the 3-minute demo page
         </Button>
       </div>
     </form>

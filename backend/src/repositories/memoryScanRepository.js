@@ -5,12 +5,18 @@
  * @param {{ maxScans?: number }} [opts]
  * @returns {import('./scanRepository.js').ScanRepository}
  */
-export function createMemoryScanRepository({ maxScans = 200 } = {}) {
+export function createMemoryScanRepository({ maxScans = 200, ttlMs = 30 * 24 * 60 * 60 * 1000 } = {}) {
   const scans = new Map();
   const repairs = new Map();
   const verifications = new Map();
   const since = new Date().toISOString();
   let usageCount = 0;
+
+  const living = (scan) => {
+    if (!scan) return null;
+    if (ttlMs && scan.createdAt && Date.now() - Date.parse(scan.createdAt) > ttlMs) return null;
+    return scan;
+  };
 
   const touch = (id, value) => {
     scans.delete(id);
@@ -40,8 +46,23 @@ export function createMemoryScanRepository({ maxScans = 200 } = {}) {
     },
 
     async getScan(id) {
-      const scan = scans.get(id);
-      return scan ? structuredClone(scan) : null;
+      const scan = living(scans.get(id));
+      if (!scan) {
+        scans.delete(id);
+        repairs.delete(id);
+        verifications.delete(id);
+        return null;
+      }
+      return structuredClone(scan);
+    },
+
+    async listByIds(ids) {
+      const out = [];
+      for (const id of ids) {
+        const scan = await this.getScan(id);
+        if (scan) out.push(scan);
+      }
+      return out;
     },
 
     async recordUsage() {
