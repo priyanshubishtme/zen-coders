@@ -19,6 +19,9 @@ Every error uses the envelope in [03-architecture.md#error-model](03-architectur
 | `GET`  | `/scans/:id/patched.html` | Latest patched source (attachment)        | `200 text/html`             | Live (Phase 2)                    |
 | `GET`  | `/scans`             | Capability list: `?ids=` (max 50)              | `200 { scans }`             | Live (Phase 4)                    |
 | `GET`  | `/scans/:id/report`  | Report as `json`, `md` or `html`               | `200`                       | Live (Phase 4). HTML is escaped, script-free, CSP + attachment. |
+| `GET`  | `/scans/:id/events`  | Engine log as server-sent events               | `200 text/event-stream`     | Live (Phase A). Headers flush immediately. Polling still owns the score. |
+| `GET`  | `/scans/:id/screenshot` | Viewport JPEG, `?which=before` or `after`  | `200 image/jpeg`            | Live (Phase A). Memory cache, 1 hour. `Cross-Origin-Resource-Policy: cross-origin`. |
+| `GET`  | `/scans/:id/source`  | Original HTML as plain text                    | `200 text/plain`            | Live (Phase A). `nosniff`. `410 SOURCE_EXPIRED` after one hour. |
 
 Until a route is implemented it returns `501 NOT_IMPLEMENTED`. Validation still runs first, so
 clients can integrate against the real error behaviour today.
@@ -88,6 +91,13 @@ ListScansQuery = z.object({
 
 // GET /scans/:id/report  — HTML is script-free, escaped, CSP + Content-Disposition
 ReportQuery = z.object({ format: z.enum(['json', 'md', 'html']).default('json') });
+
+// GET /scans/:id/screenshot?which=before|after  — not a file path
+ScreenshotQuery = z.object({ which: z.enum(['before', 'after']).default('before') });
+// Missing or expired JPEG: 404 "That screenshot is not available."
+// GET /scans/:id/events — one `data: {id,at,stage,message,ms}` line per event, then the
+// connection stays open while the scan is running and closes when status is completed or failed.
+// GET /scans/:id/source — text/plain. Unknown scan is 404. Expired HTML is 410 SOURCE_EXPIRED.
 
 // :id everywhere
 ScanIdParams = z.object({ id: Id }); // Id = z.string().min(1).max(64)
@@ -281,6 +291,10 @@ Scan = z.object({
   engine: z.object({ axeVersion }).nullable(),
   timings: { queueMs, loadMs, renderMs, axeMs, checksMs, normalizeMs, totalMs }, // all nullable ms
   score: Score.nullable(), // null in Phase 1
+  events: z.array(ScanEvent).default([]), // engine log; also streamed on GET /events
+  marks: z.array(Mark).default([]), // pin fractions of the viewport, or place offscreen|frame
+  viewport: z.object({ width, height }).nullable(),
+  shots: z.object({ before: z.boolean(), after: z.boolean() }), // JPEG bytes are not on this object
   tokenUsage: ScanTokenSummary,
   error: z.object({ code, message }).nullable(),
   createdAt,

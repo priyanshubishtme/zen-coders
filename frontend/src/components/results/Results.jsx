@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button.jsx';
 import { ErrorPanel } from '@/components/ErrorPanel.jsx';
 import { useRepairs } from '@/hooks/useRepairs.js';
 import { useSeverityParam } from '@/hooks/useSeverityParam.js';
+import { getScan } from '@/lib/api.js';
 import { Link } from '@/lib/Link.jsx';
+import { visualOn } from '@/lib/flags.js';
 import { SCORE_DISCLAIMER, applicableRepairs } from '@/lib/score.js';
 import { groupByRule } from '@/lib/severity.js';
 import { HeadingOutline } from './HeadingOutline.jsx';
@@ -14,6 +16,7 @@ import { ScoreExplain } from './ScoreExplain.jsx';
 import { ScoreMeter } from './ScoreMeter.jsx';
 import { SeverityFilter } from './SeverityFilter.jsx';
 import { VerificationPanel } from './VerificationPanel.jsx';
+import { Workbench } from './Workbench.jsx';
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -200,11 +203,22 @@ export function Results({ scan, health = null }) {
   const headingRef = useRef(null);
   const [severity, setSeverity] = useSeverityParam();
   const [useAi, setUseAi] = useState(true);
+  const [activeId, setActiveId] = useState(null);
+  const [freshShots, setFreshShots] = useState(null);
   const llmOn = health?.checks.llm === 'on';
   const llmPaused = health?.checks.llm === 'circuit-open';
   const repairs = useRepairs(scan.id, { useLlm: llmOn && useAi });
 
   useEffect(() => headingRef.current?.focus(), [scan.id]);
+
+  useEffect(() => {
+    if (!repairs.verification) return undefined;
+    const ctrl = new AbortController();
+    getScan(scan.id, ctrl.signal)
+      .then((fresh) => setFreshShots(fresh.shots ?? null))
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [repairs.verification, scan.id]);
 
   const groups = useMemo(() => groupByRule(scan.violations), [scan.violations]);
   const counts = useMemo(
@@ -218,7 +232,14 @@ export function Results({ scan, health = null }) {
     () => Object.fromEntries(repairs.repairs.map((r) => [r.violationId, r])),
     [repairs.repairs],
   );
+  const marksById = useMemo(
+    () => Object.fromEntries((scan.marks ?? []).map((mark) => [mark.violationId, mark])),
+    [scan.marks],
+  );
   const issueProps = {
+    marksById,
+    activeId,
+    onSelect: setActiveId,
     repairsByViolation,
     drafts: repairs.drafts,
     onDraft: repairs.setDraft,
@@ -255,6 +276,15 @@ export function Results({ scan, health = null }) {
       )}
 
       {repairs.verification && <VerificationPanel verification={repairs.verification} />}
+
+      {visualOn && (
+        <Workbench
+          scan={{ ...scan, shots: freshShots ?? scan.shots }}
+          verification={repairs.verification}
+          activeId={activeId}
+          onSelect={setActiveId}
+        />
+      )}
 
       {scan.network?.blocked > 0 && (
         <Alert tone="info" icon={ShieldOff} className="mt-4" role="note">

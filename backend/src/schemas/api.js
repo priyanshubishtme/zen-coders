@@ -70,6 +70,11 @@ export const ReportQuery = z.object({
   format: z.enum(['json', 'md', 'html']).default('json'),
 });
 
+/** Which stored JPEG to return. Not a file path. */
+export const ScreenshotQuery = z.object({
+  which: z.enum(['before', 'after']).default('before'),
+});
+
 export const HealthResponse = z.object({
   status: z.enum(['ok', 'degraded']),
   version: z.string(),

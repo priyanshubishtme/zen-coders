@@ -1,5 +1,7 @@
 import { nanoid } from 'nanoid';
 import { createSourceCache } from '../../repositories/sourceCache.js';
+import { marksFor } from '../scanner/pins.js';
+import { createScanLog } from '../scanLog.js';
 import { AppError } from '../../utils/errors.js';
 import { sha256 } from '../../utils/hash.js';
 import { resolveSafeUrl } from '../../utils/urlSafety.js';
@@ -63,10 +65,19 @@ export function emptyTokenSummary(budget) {
  *   config: object, logger: object, lookup?: Function, verifier?: object, sourceCache?: object,
  *   llm?: object }} deps
  */
+const STAGE_LOG = {
+  loading: ['render', 'Loading the page'],
+  rendering: ['wait', 'Waiting for the network to settle'],
+  checking: ['axe', 'Running axe-core'],
+  normalizing: ['score', 'Scoring the page'],
+};
+
 export function createOrchestrator({ scanner, repo, config, logger, lookup, verifier, sourceCache, llm }) {
   const jobs = createInProcessQueue({ logger });
   const idempotency = new Map();
   const sources = sourceCache ?? createSourceCache();
+  const scanLog = createScanLog();
+  const note = (scanId, stage, message, ms = null) => scanLog.publish(scanId, { stage, message, ms });
   const repairFlow = createRepairFlow({
     repo,
     sourceCache: sources,
@@ -75,6 +86,7 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
     emptyTokens: () => emptyTokenSummary(config.LLM_TOKEN_BUDGET_PER_SCAN),
     llm,
     config,
+    onEvent: note,
   });
 
   async function runScan({ id, input, options, createdAtMs, inputHash }, attempt = 0) {
@@ -91,6 +103,8 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
     const stageUpdate = (stage) => {
       if (stage === 'loading') timings.queueMs = Date.now() - createdAtMs;
       log.debug({ stage }, 'scan stage');
+      const mapped = STAGE_LOG[stage];
+      if (mapped) note(id, mapped[0], mapped[1], Date.now() - createdAtMs);
       repo.updateScan(id, { status: 'scanning', stage, timings: { ...timings } }).catch(() => {});
     };
 
@@ -107,13 +121,33 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
       timings.totalMs = Date.now() - createdAtMs;
 
       if (raw.source) {
-        sources.set(id, { source: raw.source, resources: raw.resources, mainUrl: raw.page.finalUrl });
+        sources.set(id, {
+          source: raw.source,
+          resources: raw.resources,
+          mainUrl: raw.page.finalUrl,
+          shots: raw.screenshot ? { before: raw.screenshot } : {},
+        });
       }
+      const marks = marksFor(buckets.violations, raw.pinFrames ?? []);
+      if (config.SCREENSHOTS) {
+        note(
+          id,
+          'screenshot',
+          raw.screenshot
+            ? `Before screenshot captured (${marks.filter((m) => m.place === 'pin').length} pins)`
+            : 'Before screenshot skipped',
+        );
+      }
+      note(id, 'score', `Score ${score.value ?? 'N/A'}`, Date.now() - createdAtMs);
       await repo.updateScan(id, {
         status: 'completed',
         stage: 'done',
         ...buckets,
         score,
+        events: scanLog.list(id),
+        marks,
+        viewport: raw.viewport ?? null,
+        shots: { before: Boolean(raw.screenshot), after: false },
         headingOutline: raw.headingOutline.map(({ level, text, target, style }) => ({
           level,
           text,
@@ -144,6 +178,7 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
       if (!appError) log.error({ err }, 'scan crashed');
       else log.warn({ code: appError.code, msg: appError.message }, 'scan failed');
       timings.totalMs = Date.now() - createdAtMs;
+      note(id, 'failed', appError?.message ?? 'The scan failed unexpectedly.', timings.totalMs);
       await repo.updateScan(id, {
         status: 'failed',
         stage: 'failed',
@@ -151,6 +186,7 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
         error: appError
           ? { code: appError.code, message: appError.message }
           : { code: 'INTERNAL', message: 'The scan failed unexpectedly.' },
+        events: scanLog.list(id),
         completedAt: new Date().toISOString(),
       });
     }
@@ -209,6 +245,10 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
           totalMs: null,
         },
         score: null,
+        events: [],
+        marks: [],
+        viewport: null,
+        shots: { before: false, after: false },
         tokenUsage: emptyTokenSummary(config.LLM_TOKEN_BUDGET_PER_SCAN),
         error: null,
         createdAt: new Date(createdAtMs).toISOString(),
@@ -237,7 +277,34 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
     async getScan(id) {
       const scan = await repo.getScan(id);
       if (!scan) throw new AppError('NOT_FOUND', 'Scan not found. It may have expired.');
+      const live = scanLog.list(id);
+      if (live.length) scan.events = live;
       return scan;
+    },
+
+    watchEvents(id, send) {
+      return scanLog.subscribe(id, send);
+    },
+
+    async getScreenshot(id, which) {
+      await this.getScan(id);
+      const shot = sources.getShot(id, which);
+      if (!shot) {
+        throw new AppError('NOT_FOUND', 'That screenshot is not available. It may have expired.');
+      }
+      return shot;
+    },
+
+    async getSource(id) {
+      await this.getScan(id);
+      const cached = sources.get(id);
+      if (!cached?.source) {
+        throw new AppError(
+          'SOURCE_EXPIRED',
+          'The scanned page is kept for one hour only and has expired. Scan it again to see the source.',
+        );
+      }
+      return cached.source;
     },
 
     async listScans(ids) {
@@ -260,8 +327,38 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup, veri
       };
     },
 
-    proposeRepairs: (scanId, body, ctx) => repairFlow.proposeRepairs(scanId, body, ctx),
-    verify: (scanId, body) => repairFlow.verify(scanId, body),
+    async proposeRepairs(scanId, body, ctx) {
+      const result = await repairFlow.proposeRepairs(scanId, body, ctx);
+      const events = scanLog.list(scanId);
+      if (events.length) await repo.updateScan(scanId, { events });
+      return result;
+    },
+    async verify(scanId, body) {
+      const started = Date.now();
+      note(scanId, 'verify', 'Re-scanning the patched copy');
+      const result = await repairFlow.verify(scanId, body);
+      note(
+        scanId,
+        'score',
+        `Score ${result.before?.value ?? 'N/A'} → ${result.after?.value ?? 'N/A'}`,
+        Date.now() - started,
+      );
+      if (config.SCREENSHOTS && scanner.captureShot && result.patchedHtml) {
+        const jpeg = await scanner.captureShot(result.patchedHtml);
+        if (jpeg && sources.setShot(scanId, 'after', jpeg)) {
+          const current = await repo.getScan(scanId);
+          await repo.updateScan(scanId, {
+            shots: { before: Boolean(current?.shots?.before), after: true },
+          });
+          note(scanId, 'screenshot', 'After screenshot captured');
+        } else {
+          note(scanId, 'screenshot', 'After screenshot skipped');
+        }
+      }
+      const events = scanLog.list(scanId);
+      if (events.length) await repo.updateScan(scanId, { events });
+      return result;
+    },
     getPatchedHtml: (scanId) => repairFlow.getPatchedHtml(scanId),
     async getReport(scanId) {
       const scan = await repo.getScan(scanId);

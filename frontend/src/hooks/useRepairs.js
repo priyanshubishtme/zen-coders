@@ -53,8 +53,15 @@ export function useRepairs(scanId, { useLlm = false } = {}) {
   const [rejectedIds, setRejectedIds] = useState(() => new Set());
   const gen = useRef(0);
   const controller = useRef(null);
+  const seenId = useRef(null);
 
   useEffect(() => {
+    // The first run for a scan must not abort. A click can land before this
+    // effect flushes, and aborting it drops the repair request.
+    if (seenId.current === scanId) return undefined;
+    const previous = seenId.current;
+    seenId.current = scanId;
+    if (previous == null) return undefined;
     gen.current += 1;
     controller.current?.abort();
     controller.current = null;
@@ -62,6 +69,7 @@ export function useRepairs(scanId, { useLlm = false } = {}) {
     setDrafts({});
     setAcceptedIds(new Set());
     setRejectedIds(new Set());
+    return undefined;
   }, [scanId]);
 
   useEffect(

@@ -49,6 +49,16 @@ const EnvSchema = z.object({
   MONGODB_URI: z.string().default(''),
   /** Shared report links and stored scans expire after this many days. */
   SCAN_TTL_DAYS: z.coerce.number().int().positive().default(30),
+
+  /** Viewport screenshots. Default on. A failed shot never fails the scan. */
+  SCREENSHOTS: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  SCREENSHOT_QUALITY: z.coerce.number().int().min(30).max(90).default(60),
+  SCREENSHOT_MAX_BYTES: z.coerce.number().int().positive().default(500_000),
+  VIEWPORT_WIDTH: z.coerce.number().int().min(320).max(1920).default(1280),
+  VIEWPORT_HEIGHT: z.coerce.number().int().min(320).max(1440).default(720),
 });
 
 /** @typedef {z.infer<typeof EnvSchema>} Config */

@@ -76,10 +76,10 @@ export function createBrowserPool({ maxContexts, queueMax, logger, launch }) {
      * `timeoutMs`; the context is closed, which kills any hung page.
      * @template T
      * @param {(context: import('playwright').BrowserContext) => Promise<T>} fn
-     * @param {{ timeoutMs: number }} opts
+     * @param {{ timeoutMs: number, viewport?: { width: number, height: number } }} opts
      * @returns {Promise<T>}
      */
-    async withContext(fn, { timeoutMs }) {
+    async withContext(fn, { timeoutMs, viewport }) {
       await acquire();
       let context;
       let timer;
@@ -88,7 +88,7 @@ export function createBrowserPool({ maxContexts, queueMax, logger, launch }) {
         context = await browser.newContext({
           serviceWorkers: 'block',
           acceptDownloads: false,
-          viewport: { width: 1280, height: 800 },
+          viewport: viewport ?? { width: 1280, height: 720 },
         });
         const work = fn(context);
         work.catch(() => {});

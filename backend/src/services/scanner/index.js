@@ -3,6 +3,7 @@ import { AppError } from '../../utils/errors.js';
 import { createBrowserPool } from './browserPool.js';
 import { resolveAxeTargets, runChecks } from './checks/index.js';
 import { installNetworkGuard } from './networkGuard.js';
+import { frameKey, mainSelector, rectToPin } from './pins.js';
 
 /** axe tags for the default WCAG 2.2 AA target. */
 export function axeTags({ includeAAA, includeBestPractice }) {
@@ -69,6 +70,61 @@ export function createScanner(config, deps = {}) {
    *   replay: never touch the network; serve the page from captured responses (verification).
    * @returns {Promise<RawScanResult>}
    */
+  const viewport = { width: config.VIEWPORT_WIDTH, height: config.VIEWPORT_HEIGHT };
+
+  async function jpegOf(page) {
+    const buf = await page.screenshot({
+      type: 'jpeg',
+      quality: config.SCREENSHOT_QUALITY,
+      fullPage: false,
+    });
+    if (buf.length > config.SCREENSHOT_MAX_BYTES) return null;
+    return buf;
+  }
+
+  /** Bounding boxes for axe nodes, in viewport fractions. Never throws. */
+  async function measure(page, rules) {
+    const specs = [];
+    for (const rule of rules) {
+      for (const node of rule.nodes ?? []) {
+        specs.push({
+          key: frameKey(rule.id, node.target),
+          selector: mainSelector(node.target),
+        });
+      }
+    }
+    if (!specs.length) return [];
+    const measured = await page.evaluate((items) => {
+      // Runs in the page, where document exists.
+      const root = globalThis.document;
+      return items.map((item) => {
+        if (!item.selector) return { key: item.key, place: 'frame' };
+        let el;
+        try {
+          el = root.querySelector(item.selector);
+        } catch {
+          return { key: item.key, place: 'unmeasured' };
+        }
+        if (!el) return { key: item.key, place: 'unmeasured' };
+        const r = el.getBoundingClientRect();
+        const name = (el.getAttribute('aria-label') || el.getAttribute('alt') || el.innerText || '')
+          .trim()
+          .slice(0, 160);
+        return {
+          key: item.key,
+          name,
+          role: el.getAttribute('role') || el.tagName.toLowerCase(),
+          rect: { x: r.x, y: r.y, width: r.width, height: r.height },
+        };
+      });
+    }, specs);
+    return measured.map((item) => {
+      if (item.place) return { key: item.key, place: item.place, name: '', role: '' };
+      const pin = rectToPin(item.rect, viewport);
+      return { key: item.key, name: item.name ?? '', role: item.role ?? '', ...pin };
+    });
+  }
+
   async function scan(input, options, { onStage = () => {}, replay } = {}) {
     return pool.withContext(
       async (context) => {
@@ -130,6 +186,20 @@ export function createScanner(config, deps = {}) {
         const checks = await runChecks(page);
         timings.checksMs = Date.now() - t;
 
+        let screenshot = null;
+        let pinFrames = [];
+        if (config.SCREENSHOTS && !replay) {
+          try {
+            pinFrames = await measure(page, violations);
+            screenshot = await jpegOf(page);
+            if (!screenshot) pinFrames = [];
+          } catch (err) {
+            screenshot = null;
+            pinFrames = [];
+            deps.logger?.warn({ err: err?.message }, 'screenshot skipped');
+          }
+        }
+
         return {
           axeVersion: axe.testEngine.version,
           violations,
@@ -152,14 +222,36 @@ export function createScanner(config, deps = {}) {
             blockedSamples: guard.blockedSamples,
           },
           timings,
+          screenshot,
+          pinFrames,
+          viewport,
         };
       },
-      { timeoutMs: config.SCAN_TIMEOUT_MS },
+      { timeoutMs: config.SCAN_TIMEOUT_MS, viewport },
     );
+  }
+
+  /** Render patched HTML and return a JPEG of the same viewport, or null. */
+  async function captureShot(html) {
+    if (!config.SCREENSHOTS) return null;
+    try {
+      return await pool.withContext(
+        async (context) => {
+          const page = await context.newPage();
+          await page.setContent(html, { waitUntil: 'load', timeout: 8_000 });
+          return jpegOf(page);
+        },
+        { timeoutMs: 15_000, viewport },
+      );
+    } catch (err) {
+      deps.logger?.warn({ err: err?.message }, 'after screenshot skipped');
+      return null;
+    }
   }
 
   return {
     scan,
+    captureShot,
     health: () => pool.health(),
     stats: () => pool.stats(),
     close: () => pool.close(),

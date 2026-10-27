@@ -52,7 +52,9 @@ export function WcagChips({ refs }) {
  *   repairsByViolation?: Record<string, import('@/lib/api.js').Repair>,
  *   drafts?: Record<string, string>, onDraft?: (id: string, text: string) => void,
  *   acceptedIds?: Set<string>, onAccept?: (id: string) => void, onReject?: (id: string) => void,
- *   onFix?: (violationIds: string[]) => void, fixing?: boolean }} props
+ *   onFix?: (violationIds: string[]) => void, fixing?: boolean,
+ *   marksById?: Record<string, { n: number | null, place: string }>,
+ *   activeId?: string | null, onSelect?: (id: string) => void }} props
  */
 export function IssueGroup({
   group,
@@ -65,16 +67,44 @@ export function IssueGroup({
   onReject,
   onFix,
   fixing = false,
+  marksById = {},
+  activeId = null,
+  onSelect,
 }) {
   const { first, items } = group;
   const n = items.length;
   const hasRepairs = items.some((v) => repairsByViolation[v.id]);
+  const highlighted = items.some((v) => v.id === activeId);
   const elements = (
     <ul className="mt-2 space-y-3">
       {items.map((v) => {
         const repair = repairsByViolation[v.id];
+        const mark = marksById[v.id];
         return (
-          <li key={v.id} className="rounded-md bg-surface p-3">
+          <li
+            key={v.id}
+            id={`issue-${v.id}`}
+            tabIndex={-1}
+            className={`rounded-md bg-surface p-3 ${activeId === v.id ? 'ring-2 ring-primary' : ''}`}
+          >
+            {mark?.n != null && (
+              <button
+                type="button"
+                className="mb-2 min-h-8 rounded-md border px-2 text-xs"
+                aria-pressed={activeId === v.id}
+                onClick={() => onSelect?.(v.id)}
+              >
+                Pin {mark.n}
+              </button>
+            )}
+            {mark?.place === 'offscreen' && (
+              <p className="mb-2 text-xs text-muted-foreground">This element was outside the screenshot.</p>
+            )}
+            {mark?.place === 'frame' && (
+              <p className="mb-2 text-xs text-muted-foreground">
+                This element is inside another frame, so it has no pin.
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
               Selector:{' '}
               <code className="font-mono text-foreground">{v.node.target.join(' → ')}</code>
@@ -104,7 +134,7 @@ export function IssueGroup({
   );
 
   return (
-    <article className="rounded-lg border bg-background p-4" aria-labelledby={`issue-${first.id}`}>
+    <article className="rounded-lg border bg-background p-4" aria-labelledby={`issue-title-${first.id}`}>
       <div className="flex flex-wrap items-center gap-2">
         <SeverityBadge impact={group.impact} manual={manual} />
         <span className="text-xs text-muted-foreground">
@@ -123,7 +153,7 @@ export function IssueGroup({
           </Button>
         )}
       </div>
-      <h3 id={`issue-${first.id}`} className="mt-2 font-semibold">
+      <h3 id={`issue-title-${first.id}`} className="mt-2 font-semibold">
         {first.title}
       </h3>
       <p className="mt-1 text-sm">{first.explanation}</p>
@@ -140,7 +170,12 @@ export function IssueGroup({
       {hasRepairs ? (
         <div className="mt-3">{elements}</div>
       ) : (
-        <details className="mt-3">
+        <details
+          className="mt-3"
+          ref={(node) => {
+            if (node && highlighted) node.open = true;
+          }}
+        >
           <summary className="min-h-6 cursor-pointer text-sm font-medium text-primary">
             Show {n === 1 ? 'the affected element' : `all ${n} affected elements`}
           </summary>

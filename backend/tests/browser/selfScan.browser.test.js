@@ -49,7 +49,7 @@ function startSpa(dir) {
   });
 }
 
-describeBrowser('AccessFix UI scanned by AccessFix', { timeout: 120_000 }, () => {
+describeBrowser('AccessFix UI scanned by AccessFix', { timeout: 240_000 }, () => {
   let app;
   let agent;
   let spa;
@@ -74,13 +74,21 @@ describeBrowser('AccessFix UI scanned by AccessFix', { timeout: 120_000 }, () =>
   });
 
   it('finds zero automated violations and zero regressions on the built UI', async () => {
-    const created = await agent.post('/scans').send({ input: { type: 'url', url: spa.origin + '/' } });
-    expect(created.status).toBe(202);
-    const scan = await waitForScan(agent, created.body.id, 60_000);
-    expect(scan.status).toBe('completed');
-    expect(scan.page?.title).toBe('AccessFix');
-    expect(scan.score?.value).not.toBeNull();
-    expect(scan.violations, JSON.stringify(scan.violations.map((v) => v.ruleId))).toEqual([]);
+    const themes = ['light', 'dark'];
+    const scans = [];
+    for (const theme of themes) {
+      const created = await agent
+        .post('/scans')
+        .send({ input: { type: 'url', url: `${spa.origin}/?theme=${theme}` } });
+      expect(created.status).toBe(202);
+      const scan = await waitForScan(agent, created.body.id, 60_000);
+      expect(scan.status, theme).toBe('completed');
+      expect(scan.page?.title, theme).toBe('AccessFix');
+      expect(scan.score?.value, theme).not.toBeNull();
+      expect(scan.violations, `${theme} ${JSON.stringify(scan.violations.map((v) => v.ruleId))}`).toEqual([]);
+      scans.push(scan);
+    }
+    const scan = scans[0];
 
     const repairs = await agent.post(`/scans/${scan.id}/repairs`).send({ useLlm: false });
     const ids = (repairs.body.repairs ?? []).filter((r) => r.status === 'verified').map((r) => r.id);
@@ -91,8 +99,9 @@ describeBrowser('AccessFix UI scanned by AccessFix', { timeout: 120_000 }, () =>
 
     const payload = {
       generatedAt: new Date().toISOString(),
-      violationCount: scan.violations.length,
+      violationCount: 0,
       score: scan.score?.value ?? null,
+      themes,
       manualReview: scan.manualReview.map((v) => ({ ruleId: v.ruleId, title: v.title })),
     };
     writeFileSync(selfScanPath, `${JSON.stringify(payload, null, 2)}\n`);

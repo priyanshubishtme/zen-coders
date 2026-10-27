@@ -25,5 +25,19 @@ export function createSourceCache({ ttlMs = 60 * 60 * 1000, maxEntries = 100, no
       }
       return e.value;
     },
+
+    /** JPEG bytes for `before` or `after`. Same TTL as the HTML. Not written to the database. */
+    setShot(scanId, which, buffer) {
+      const value = this.get(scanId);
+      if (!value || !buffer) return false;
+      value.shots = { ...(value.shots ?? {}), [which]: buffer };
+      this.set(scanId, value);
+      return true;
+    },
+
+    getShot(scanId, which) {
+      const shot = this.get(scanId)?.shots?.[which];
+      return shot ?? null;
+    },
   };
 }

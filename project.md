@@ -200,7 +200,9 @@ What happens before the 202, so bad input never occupies Chromium:
 4. An optional `Idempotency-Key` header (max 128 characters, remembered 24 hours in memory) returns the same scan id if you retry the same POST.
 5. The record stores a SHA-256 of the input, not the HTML. The raw HTML goes only into the one-hour source cache after the scan succeeds.
 
-Stages the UI shows: queued → loading → rendering (wait until the network is quiet, at most 5 seconds; `page.settled` is false if it never is) → checking → normalizing → done. A failure stores a code such as `SCAN_TIMEOUT`, `FETCH_FAILED`, `BROWSER_UNAVAILABLE`, or `INTERNAL`.
+Stages the UI shows: queued → loading → rendering (wait until the network is quiet, at most 5 seconds; `page.settled` is false if it never is) → checking → normalizing → done. A failure stores a code such as `SCAN_TIMEOUT`, `FETCH_FAILED`, `BROWSER_UNAVAILABLE`, or `INTERNAL`. The same stages are written to the scan log (`events`) and streamed on `GET /scans/:id/events`.
+
+When screenshots are on (the default), the scan ends with a 1280×720 JPEG of the viewport and a pin for each violation that fits in that frame. The JPEG stays in the one-hour memory cache. If the shot fails, the scan still completes.
 
 During checking, each element gets a runtime id in a `WeakMap` inside the page. It is not written into the HTML as an attribute, so axe snippets stay clean. That id is how a later re-scan knows “this is the same button.”
 
@@ -310,6 +312,8 @@ Lighthouse is not in the pipeline. A future comparison column could show a Light
 | Repairs and verifications | RAM, deleted with the scan | Collections `repairs`, `verifications`, same TTL | RAM |
 | Usage counters | RAM | Collection `usage`, same TTL | RAM |
 | Original HTML and captured responses | RAM, 1 hour, never in the database | Same. Mongo does not change this. | Same |
+| Before/after JPEG screenshots | RAM, same 1 hour cache as the HTML | Same. Not in Mongo. | Same |
+| Pin boxes, log events, shot flags | On the scan record | On the scan document | On the scan record |
 | Idempotency keys | RAM, 24 hours | RAM, 24 hours. Not in Mongo. | RAM |
 | LLM cache and daily token counts | RAM | RAM. A restart resets the daily budget. | RAM |
 | This browser’s history list | `localStorage` | `localStorage` on that browser | `localStorage` |
@@ -324,7 +328,7 @@ Do not run the API on a platform that freezes the process between requests. The 
 
 | Route | What you get |
 | --- | --- |
-| `/` | Headline, comparison table, self-scan proof, then the paste/URL form and, after a scan, the score and issue list. |
+| `/` | Headline, comparison table, self-scan proof, then the paste/URL form and, after a scan, the score, the workbench, and the issue list. |
 | `/history` | This browser’s scans, trend chart plus table. |
 | `/business` | Pricing hypotheses, the GitHub Action idea, limits. Text from the business plan. |
 | `/scans/:id/report` | Read-only report, copy link, three downloads. |
@@ -340,9 +344,9 @@ The results column, after a scan, contains:
 - Preview patched page: one `<iframe sandbox="" srcdoc={patchedHtml}>`, inside a disclosure, **after** apply only. Empty `sandbox` means scripts, forms, and same-origin access are off.
 - Efficiency panel when a model ran: tokens used, tokens saved, cache hits, and the “one call per issue” comparison.
 
-Theme: on load, `main.jsx` adds the `dark` class if the operating system prefers dark. Light and dark token pairs are contrast-tested. There is no theme button in the header. The wireframe in [`docs/08-ux-spec.md`](docs/08-ux-spec.md) still shows one.
+Theme: System, Light, or Dark in the header. On load, `?theme=light` or `?theme=dark` wins for that visit (the self-scan uses both). Otherwise the saved `accessfix.theme` value is used, and if nothing is saved the operating system preference is used. Light and dark token pairs are unchanged and contrast-tested.
 
-Layout gap versus that spec: the spec draws two panes (issue list | detail and preview). The built page is one scrolling column. The spec’s preview is not on screen during the issue list.
+The results view is still one scrolling column. Under the score, the workbench shows a 1280×720 screenshot of the scanned page, numbered pins, a before/after slider, a live engine log, approximate color filters, and a screen-reader name list. Monaco opens only after “Show original and patched code”. `VITE_VISUAL=false` hides the workbench. The sandboxed patched-page preview is still there after Apply. Set `SCREENSHOTS=false` to skip capture; a failed shot never fails the scan.
 
 ## 8. Future scope
 
@@ -353,43 +357,16 @@ Nothing below is implemented, except empty stubs:
 
 The plug-in point and the contract change for each item are also in [`docs/09-roadmap-future.md`](docs/09-roadmap-future.md).
 
-### 8.1 A visual workbench (next UI)
+### 8.1 Visual workbench (shipped in Phase A)
 
-The current UI is correct and it is text-heavy: a long pitch, a wide table, issue cards that read like documents, and a preview you only see if you open a disclosure after Apply. The next interface should show the page. Constraints that do not move: no web fonts that the self-scan would have to fetch, contrast stays on the tested tokens, severity is icon plus text, the customer’s site never receives an injected widget, and pasted HTML still cannot run scripts in our origin.
+The workbench is the default results view. It does not change detection or repairs.
 
-**Workbench layout (desktop).**
+- Screenshots are a viewport JPEG (1280×720 by default, quality 60, max 500 KB). The before shot is taken at the end of the scan. The after shot is taken from the patched HTML after Apply, in a new browser context, same viewport. Bytes live in the one-hour memory source cache, not in MongoDB. The scan record stores only `shots.before` / `shots.after`, `viewport`, and `marks`.
+- Pins are fractions of that viewport. `GET /scans/:id` still returns the score and issues. `GET /scans/:id/events` streams the log and the finished list is saved on the scan. `GET /scans/:id/source` returns the original HTML as `text/plain`.
+- Color filters and the name list explain the screenshot. They are not a second detector. Focus order is not captured.
+- Monaco (`@monaco-editor/react`) loads only after “Show original and patched code”, from the editor’s CDN. The landing page does not load it.
 
-```
-┌ header: wordmark, Scan / History / Business, theme, API status ─────────┐
-│ score  49 → 98   Poor → Good    [before | after] toggle                  │
-├────────────────────────────┬─────────────────────────────────────────────┤
-│ Issue list                 │ Stage: the scanned page                     │
-│  Critical  button-name  10 │   sandboxed iframe                          │
-│  Serious   contrast     14 │   numbered outlines on the failing nodes    │
-│  …                         │ Detail: one issue                           │
-│                            │   plain title, WCAG chip, diff, Apply       │
-├────────────────────────────┴─────────────────────────────────────────────┤
-│ Log: 0.4s load · 0.8s axe · 1.1s verify · scanId · copy                   │
-└──────────────────────────────────────────────────────────────────────────┘
-```
-
-Under 1024 px the stage stacks above the list. Focus moves to the detail heading when an issue opens. The chart rule stays: if a picture shows a score, a table has the same numbers.
-
-**Before and after.** Two sandboxed frames, same width, or one frame with a Before | After control. Before is the HTML we scanned. After is the patched HTML. The score change sits between them. Today only After exists, and only after Apply.
-
-**Errors on the page.** The iframe cannot run our script inside the untrusted page (`sandbox` stays empty). So the highlights are not a script injected into their origin. Practical approach: we already have each node’s selector and snippet. A transparent layer over the iframe is fragile (scroll and zoom). The reliable approach is to rewrite the **preview copy** (not the download) so failing elements get a `data-afx-mark` and a number, plus a `<style>` we control inside `srcdoc`. Clicking a number in the list scrolls that element by using `srcdoc` anchors. Clicking the highlight (the element is not a script; it is a link to `#issue-id` in the parent, or a map we draw from known boxes) selects the issue. The downloaded patched file does not contain those marks.
-
-**Log.** Replace the five-step checklist as the only feedback with a timed log: queue, load, render, axe, each repair strategy, verify, with milliseconds and `scanId` / `requestId`. `role="status"` for new lines, a Copy button, no fake console noise. Errors stay `role="alert"`.
-
-**Less text on `/`.** One headline, the self-scan line, two buttons (broken sample, demo page), then the form. The comparison table moves behind a “How this is different” disclosure or stays on `/business`. `/business` can stay long; the scanner should not.
-
-**Theme control.** Tokens already exist. Add a button in the header: System / Light / Dark, stored in `localStorage`, still defaulting to `prefers-color-scheme`. Do not invent new severity colours.
-
-**Density.** The issue list becomes rows (rule, count, band) instead of a card per element. The open row is the only one with the diff and the snippet. This is the “do what we want visually” pass: same data, less chrome, the page itself on the right.
-
-**Motion.** Anything that slides the preview must stop under `prefers-reduced-motion`.
-
-**Not in this pass.** Colour-blindness simulation and a fake screen reader. They are listed in doc 09. They do not fix the source, so they wait until the workbench exists.
+Still open, and not part of Phase A: a shorter landing page, denser issue rows, and rewriting a preview copy with `data-afx-mark` (we used a screenshot and pins instead of injecting marks into the customer’s HTML).
 
 ### 8.2 Multi-page crawl
 

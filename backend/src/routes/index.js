@@ -6,6 +6,7 @@ import {
   ListScansQuery,
   ReportQuery,
   ScanIdParams,
+  ScreenshotQuery,
   VerifyBody,
 } from '../schemas/index.js';
 
@@ -36,6 +37,13 @@ export function createRouter(c, { scanLimiter }) {
     c.scans.verify,
   );
   r.get('/scans/:id/patched.html', validate({ params: ScanIdParams }), c.scans.patched);
+  r.get('/scans/:id/events', validate({ params: ScanIdParams }), c.scans.events);
+  r.get(
+    '/scans/:id/screenshot',
+    validate({ params: ScanIdParams, query: ScreenshotQuery }),
+    c.scans.screenshot,
+  );
+  r.get('/scans/:id/source', validate({ params: ScanIdParams }), c.scans.source);
   r.get(
     '/scans/:id/report',
     validate({ params: ScanIdParams, query: ReportQuery }),

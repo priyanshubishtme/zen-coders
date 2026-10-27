@@ -120,6 +120,30 @@ export const verifyRepairs = (id, body, signal) =>
 export const patchedHtmlUrl = (id) =>
   `${API_BASE_URL}/scans/${encodeURIComponent(id)}/patched.html`;
 
+export const screenshotUrl = (id, which) =>
+  `${API_BASE_URL}/scans/${encodeURIComponent(id)}/screenshot?which=${which}`;
+
+export const eventsUrl = (id) => `${API_BASE_URL}/scans/${encodeURIComponent(id)}/events`;
+
+/** Original HTML as text. 410 when the one-hour cache has expired. */
+export async function getSource(id, signal) {
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}/scans/${encodeURIComponent(id)}/source`, {
+      headers: { accept: 'text/plain' },
+      signal,
+    });
+  } catch (err) {
+    if (err?.name === 'AbortError') throw err;
+    throw new ApiError(0, null);
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new ApiError(res.status, body);
+  }
+  return res.text();
+}
+
 /** @param {string[]} ids */
 export const listScans = (ids, signal) =>
   request(`/scans?ids=${ids.map(encodeURIComponent).join(',')}`, { signal });

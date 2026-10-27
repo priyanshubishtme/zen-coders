@@ -33,6 +33,39 @@ describe('orchestrator', () => {
     expect(scan.timings.queueMs).not.toBeNull();
     expect(scan.headingOutline).toEqual([{ level: 1, text: 'Hi', target: ['h1'], style: null }]);
     expect(scan.score).toMatchObject({ value: 0, weightedFailures: 10, weightedTotal: 10 });
+    expect(scan.events.map((event) => event.stage)).toEqual(
+      expect.arrayContaining(['render', 'axe', 'score']),
+    );
+  });
+
+  it('stores a before screenshot in memory and numbers the matching pin', async () => {
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+    const scanner = fakeScanner(async () => ({
+      ...fakeRaw(),
+      source: '<img src="a.jpg">',
+      screenshot: jpeg,
+      viewport: { width: 1280, height: 720 },
+      pinFrames: [
+        {
+          key: 'image-alt\nimg',
+          place: 'pin',
+          x: 0.1,
+          y: 0.2,
+          w: 0.3,
+          h: 0.1,
+          name: '',
+          role: 'img',
+        },
+      ],
+    }));
+    const { orch } = setup({ scanner });
+    const { id } = await orch.createScan(html('<img src="a.jpg">'));
+    await orch.idle();
+    const scan = await orch.getScan(id);
+    expect(scan.shots).toEqual({ before: true, after: false });
+    expect(scan.marks[0]).toMatchObject({ n: 1, place: 'pin', violationId: scan.violations[0].id });
+    expect(await orch.getScreenshot(id, 'before')).toBe(jpeg);
+    expect(await orch.getSource(id)).toContain('<img');
   });
 
   it('stores the same input hash for the same input', async () => {

@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { ShieldAlert, ShieldCheck } from 'lucide-react';
 import { ApiStatus } from '@/components/ApiStatus.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Link } from '@/lib/Link.jsx';
+import { saveTheme } from '@/lib/theme.js';
 
 const NAV = [
   { href: '/', label: 'Scan' },
@@ -53,6 +55,7 @@ export function Shell({ healthState, health, path, children }) {
                 Private network scanning enabled (dev only)
               </Badge>
             )}
+            <ThemeControl />
             <ApiStatus state={healthState} />
           </div>
         </div>
@@ -61,5 +64,32 @@ export function Shell({ healthState, health, path, children }) {
         {children}
       </main>
     </>
+  );
+}
+
+const THEMES = [
+  { id: 'system', label: 'System' },
+  { id: 'light', label: 'Light' },
+  { id: 'dark', label: 'Dark' },
+];
+
+function ThemeControl() {
+  const [mode, setMode] = useState(() => document.documentElement.dataset.theme || 'system');
+  return (
+    <div role="group" aria-label="Color theme" className="flex rounded-md border">
+      {THEMES.map((theme) => (
+        <button
+          key={theme.id}
+          type="button"
+          aria-pressed={mode === theme.id}
+          className={`min-h-10 px-2 text-sm ${
+            mode === theme.id ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-background'
+          }`}
+          onClick={() => setMode(saveTheme(theme.id))}
+        >
+          {theme.label}
+        </button>
+      ))}
+    </div>
   );
 }

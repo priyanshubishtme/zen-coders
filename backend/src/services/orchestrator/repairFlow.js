@@ -60,12 +60,15 @@ const tally = (repairs, scansRun) => ({
 /**
  * Repair -> verify -> score. Kept apart from scanning so each flow stays small.
  * @param {{ repo: object, sourceCache: object, verifier: object, logger: object,
- *   emptyTokens: () => object, llm?: object, config?: object }} deps
+ *   emptyTokens: () => object, llm?: object, config?: object,
+ *   onEvent?: (scanId: string, stage: string, message: string, ms?: number | null) => void }} deps
  */
-export function createRepairFlow({ repo, sourceCache, verifier, logger, emptyTokens, llm, config }) {
+export function createRepairFlow({ repo, sourceCache, verifier, logger, emptyTokens, llm, config, onEvent }) {
   return {
     /** Propose one repair per issue and verify every automatic one in an offline re-scan. */
     async proposeRepairs(scanId, { violationIds, useLlm = true }, { ip = 'local' } = {}) {
+      const started = Date.now();
+      onEvent?.(scanId, 'patch', 'Building repairs');
       const { scan, cached } = await load(repo, sourceCache, scanId);
       const pool = [...scan.violations, ...scan.advisory];
       const wanted = violationIds ? pool.filter((v) => violationIds.includes(v.id)) : pool;
@@ -104,6 +107,12 @@ export function createRepairFlow({ repo, sourceCache, verifier, logger, emptyTok
       const repairs = [...byViolation.values()];
       await repo.saveRepairs(scanId, repairs);
 
+      onEvent?.(
+        scanId,
+        'patch',
+        `${tally(repairs, scansRun).verified} verified before apply`,
+        Date.now() - started,
+      );
       const summary = tally(repairs, scansRun);
       const deterministicFixes = repairs.filter((r) => r.strategy === 'deterministic').length;
       const used = llmRes?.usage?.totalTokens ?? 0;

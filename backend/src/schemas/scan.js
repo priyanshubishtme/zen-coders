@@ -19,6 +19,37 @@ export const ScanOptions = z
   })
   .default({ includeAAA: false, includeBestPractice: true });
 
+export const LogStage = z.enum([
+  'render',
+  'wait',
+  'axe',
+  'patch',
+  'verify',
+  'score',
+  'screenshot',
+  'failed',
+]);
+
+export const ScanEvent = z.object({
+  id: z.string().min(1).max(32),
+  at: Timestamp,
+  stage: LogStage,
+  message: z.string().max(500),
+  ms: z.number().int().nonnegative().nullable(),
+});
+
+export const Mark = z.object({
+  violationId: Id,
+  n: z.number().int().positive().nullable(),
+  x: z.number().min(0).max(1).nullable(),
+  y: z.number().min(0).max(1).nullable(),
+  w: z.number().min(0).max(1).nullable(),
+  h: z.number().min(0).max(1).nullable(),
+  name: z.string().max(200),
+  role: z.string().max(40),
+  place: z.enum(['pin', 'offscreen', 'frame', 'unmeasured']),
+});
+
 export const ScanStage = z.enum([
   'queued',
   'loading',
@@ -87,6 +118,12 @@ export const Scan = z.object({
   }),
   /** Formula version 1; null only when no in-scope rule applied (shown as N/A). */
   score: Score.nullable(),
+  /** Engine log. Empty until the scan publishes a stage. */
+  events: z.array(ScanEvent).default([]),
+  /** Pins are fractions of the viewport. Off-screen nodes have n and x null. */
+  marks: z.array(Mark).default([]),
+  viewport: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).nullable(),
+  shots: z.object({ before: z.boolean(), after: z.boolean() }).default({ before: false, after: false }),
   tokenUsage: ScanTokenSummary,
   error: z.object({ code: z.string(), message: z.string() }).nullable(),
   createdAt: Timestamp,

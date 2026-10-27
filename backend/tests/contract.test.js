@@ -63,6 +63,23 @@ describe('POST /scans + GET /scans/:id', () => {
     expect(res.text).not.toContain('<script>');
   });
 
+  it('replays the scan log as server-sent events and refuses a screenshot path', async () => {
+    const app = testApp();
+    const created = await request(app).post('/scans').send({ input: { type: 'html', html: '<p>hi</p>' } });
+    await app.locals.orchestrator.idle();
+    const events = await request(app).get(`/scans/${created.body.id}/events`);
+    expect(events.status).toBe(200);
+    expect(events.headers['content-type']).toMatch(/text\/event-stream/);
+    expect(events.text).toContain('"stage":"axe"');
+    const missing = await request(app).get(`/scans/${created.body.id}/screenshot`).query({ which: 'before' });
+    expect(missing.status).toBe(404);
+    const bad = await request(app).get(`/scans/${created.body.id}/screenshot`).query({ which: '../etc/passwd' });
+    expect(bad.status).toBe(400);
+    const source = await request(app).get(`/scans/${created.body.id}/source`);
+    expect(source.status).toBe(410);
+    expect(source.body.error.code).toBe('SOURCE_EXPIRED');
+  });
+
   it('accepts a public URL after the safety check', async () => {
     const app = testApp({ lookup: fakeLookup({ 'example.com': ['93.184.215.14'] }) });
     const res = await request(app)
