@@ -45,6 +45,7 @@ export function ambiguousLinkText(h) {
       ruleId: 'afx-link-ambiguous',
       impact: 'moderate',
       afxId: h.idOf(el),
+      marker: el.getAttribute('data-afx-v'),
       target: h.target(el),
       html: h.snippet(el),
       failureSummary: `The link text "${name}" does not say where the link goes.`,

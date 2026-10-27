@@ -1,7 +1,16 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App.jsx';
-import { completedScan, health, mockApi, reply } from './test/fixtures.js';
+import {
+  completedScan,
+  health,
+  mockApi,
+  reply,
+  sampleRepair,
+  sampleRepairsResponse,
+  sampleScore,
+  sampleVerification,
+} from './test/fixtures.js';
 
 const renderApp = () => render(<App pollMs={5} />);
 
@@ -134,7 +143,17 @@ describe('scan flow', () => {
   });
 
   it('shows a clean state that still points to manual checks', async () => {
-    vi.stubGlobal('fetch', mockApi({ scans: [completedScan({ violations: [] })] }));
+    vi.stubGlobal(
+      'fetch',
+      mockApi({
+        scans: [
+          completedScan({
+            violations: [],
+            score: sampleScore({ value: 100, failingElements: 0, weightedFailures: 0 }),
+          }),
+        ],
+      }),
+    );
     renderApp();
     await pasteAndScan();
     expect(await screen.findByText('No automated WCAG issues found')).toBeInTheDocument();
@@ -221,6 +240,189 @@ describe('error states', () => {
     renderApp();
     expect(await screen.findByText('Scanning is unavailable')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Scan' })).toBeDisabled();
+  });
+
+  it('shows the score card with band, disclaimer and formula', async () => {
+    vi.stubGlobal('fetch', mockApi());
+    renderApp();
+    await pasteAndScan();
+    expect(await screen.findByRole('heading', { name: 'Accessibility score' })).toBeInTheDocument();
+    expect(screen.getByRole('meter', { name: 'Accessibility score' })).toHaveAttribute(
+      'aria-valuenow',
+      '62',
+    );
+    expect(screen.getByText('Needs work')).toBeInTheDocument();
+    expect(
+      screen.getByText(/A score of 100 does not mean the page is fully accessible/),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Explain this score'));
+    expect(screen.getByText(/round\(100 × \(1 − 40 \/ 105\)\) = 62/)).toBeInTheDocument();
+    expect(screen.getByText('image-alt')).toBeInTheDocument();
+  });
+});
+
+describe('repairs', () => {
+  it('suggests fixes, shows a verified diff, then applies and raises the score', async () => {
+    const fetch = mockApi();
+    vi.stubGlobal('fetch', fetch);
+    renderApp();
+    await pasteAndScan();
+    await screen.findByText('2 WCAG issues');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Suggest fixes' }));
+    expect(await screen.findByText('Verified')).toBeInTheDocument();
+    expect(screen.getAllByText('Needs your input').length).toBeGreaterThan(0);
+    expect(screen.getByText('+color: #444;')).toBeInTheDocument();
+    expect(screen.getByText(/1 verified · 2 need your input/)).toBeInTheDocument();
+    expect(
+      screen.getByText('AI suggestions are off. Rule-based fixes still work.'),
+    ).toBeInTheDocument();
+
+    const post = fetch.mock.calls.find(([, init]) => init?.body?.includes('"useLlm":false'));
+    expect(post[0]).toMatch(/\/scans\/s_1\/repairs$/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply verified fixes' }));
+    expect(await screen.findByText('62 → 98')).toBeInTheDocument();
+    expect(screen.getByRole('meter', { name: 'Accessibility score' })).toHaveAttribute(
+      'aria-valuenow',
+      '98',
+    );
+    expect(screen.getByRole('link', { name: 'Download patched HTML' })).toHaveAttribute(
+      'href',
+      expect.stringMatching(/\/scans\/s_1\/patched\.html$/),
+    );
+    expect(screen.getByRole('heading', { name: 'Resolved (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Remaining (2)' })).toBeInTheDocument();
+
+    const verify = fetch.mock.calls.find((c) => String(c[0]).endsWith('/verify'));
+    expect(JSON.parse(verify[1].body)).toEqual({ repairIds: ['r3'] });
+  });
+
+  it('includes filled placeholder text when applying', async () => {
+    const fetch = mockApi({
+      verify: sampleVerification({
+        status: 'partial',
+        repairs: [
+          { repairId: 'r1', outcome: 'resolved', detail: null },
+          { repairId: 'r3', outcome: 'resolved', detail: null },
+        ],
+        after: sampleScore({ value: 99, failingElements: 1, weightedFailures: 10 }),
+      }),
+    });
+    vi.stubGlobal('fetch', fetch);
+    renderApp();
+    await pasteAndScan();
+    fireEvent.click(await screen.findByRole('button', { name: 'Suggest fixes' }));
+    const field = await screen.findAllByLabelText('Replacement text');
+    fireEvent.change(field[0], { target: { value: 'A crusty sourdough loaf' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply verified fixes' }));
+    await screen.findByText('62 → 99');
+    const verify = fetch.mock.calls.find((c) => String(c[0]).endsWith('/verify'));
+    expect(JSON.parse(verify[1].body)).toEqual({
+      repairIds: ['r1', 'r3'],
+      edits: [{ repairId: 'r1', text: 'A crusty sourdough loaf' }],
+    });
+  });
+
+  it('sends useLlm when AI is on and only applies an accepted draft', async () => {
+    const fetch = mockApi({
+      healthBody: health({ checks: { browser: 'up', store: 'memory', llm: 'on' } }),
+      repairs: sampleRepairsResponse({
+        repairs: [
+          sampleRepair({
+            strategy: 'llm',
+            draft: 'A crusty sourdough loaf',
+            placeholder: 'TODO: describe this image',
+          }),
+          sampleRepair({
+            id: 'r2',
+            violationId: 'v2',
+            patch: {
+              kind: 'attribute',
+              target: ['#v2'],
+              before: '<img id="v2">',
+              after: '<img id="v2" alt="TODO: describe this image">',
+              diff: '-<img id="v2">\n+<img id="v2" alt="TODO: describe this image">\n',
+              copy: 'Add a short description of the image.',
+            },
+          }),
+          sampleRepair({
+            id: 'r3',
+            violationId: 'v3',
+            ruleId: 'color-contrast',
+            strategy: 'deterministic',
+            status: 'verified',
+            confidence: 'high',
+            placeholder: null,
+            needsHumanInput: false,
+            notes: [],
+            rationale: 'Darken the text colour so it meets 4.5:1 contrast.',
+            patch: {
+              kind: 'css',
+              target: ['#v3'],
+              before: 'color: #777;',
+              after: 'color: #444;',
+              diff: '-color: #777;\n+color: #444;\n',
+              copy: 'Darken the text colour.',
+            },
+          }),
+        ],
+        tokenUsage: {
+          provider: 'mock',
+          model: 'mock-cheap',
+          calls: 1,
+          promptTokens: 80,
+          completionTokens: 20,
+          totalTokens: 100,
+          cacheHits: 0,
+          estimatedCostUsd: null,
+          budget: 8000,
+          budgetExhausted: false,
+          deterministicFixes: 1,
+          dedupedItems: 0,
+          naiveEstimateTokens: 900,
+          tokensSaved: 800,
+          tokensPerVerifiedFix: 100,
+        },
+      }),
+    });
+    vi.stubGlobal('fetch', fetch);
+    renderApp();
+    await pasteAndScan();
+    fireEvent.click(await screen.findByRole('button', { name: 'Suggest fixes' }));
+    expect(await screen.findByText('AI draft, needs review')).toBeInTheDocument();
+    expect(screen.getByLabelText('Use AI drafts')).toBeChecked();
+    expect(screen.getByText(/100 tokens used/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/A naive one-call-per-issue approach would have used about 900 tokens/),
+    ).toBeInTheDocument();
+    const post = fetch.mock.calls.find(([, init]) => init?.body?.includes('"useLlm":true'));
+    expect(post[0]).toMatch(/\/scans\/s_1\/repairs$/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Accept draft' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply verified fixes' }));
+    await screen.findByText('62 → 98');
+    const verify = fetch.mock.calls.find((c) => String(c[0]).endsWith('/verify'));
+    expect(JSON.parse(verify[1].body)).toEqual({
+      repairIds: ['r1', 'r3'],
+      acceptedRepairIds: ['r1'],
+    });
+  });
+
+  it('shows SOURCE_EXPIRED in plain language', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockApi({
+        repairs: reply(410, {
+          error: { code: 'SOURCE_EXPIRED', message: 'The scanned page is kept for one hour only.' },
+        }),
+      }),
+    );
+    renderApp();
+    await pasteAndScan();
+    fireEvent.click(await screen.findByRole('button', { name: 'Suggest fixes' }));
+    expect(await screen.findByText('The scanned page has expired')).toBeInTheDocument();
+    expect(screen.getByText(/Scan the page again to get fixes/)).toBeInTheDocument();
   });
 
   it('flags private-network scanning when the API allows it', async () => {

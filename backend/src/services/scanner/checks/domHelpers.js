@@ -109,24 +109,25 @@ export function afxHelpers() {
 }
 
 /**
- * Map axe targets to our element ids. Top-level array entries are iframe
- * hops (we return null for those); a nested array is a shadow-DOM path.
+ * Map axe targets to [our element id, verification marker]. Top-level array
+ * entries are iframe hops (we return nulls for those); a nested array is a
+ * shadow-DOM path. The marker is the data-afx-v attribute the verifier adds.
  */
 export function resolveTargets(h, targets) {
   return targets.map((t) => {
     try {
-      if (t.length !== 1) return null;
+      if (t.length !== 1) return [null, null];
       const path = Array.isArray(t[0]) ? t[0] : [t[0]];
       let root = document;
       let el = null;
       for (const sel of path) {
         el = root.querySelector(sel);
-        if (!el) return null;
+        if (!el) return [null, null];
         root = el.shadowRoot ?? el;
       }
-      return el ? h.idOf(el) : null;
+      return el ? [h.idOf(el), el.getAttribute('data-afx-v')] : [null, null];
     } catch {
-      return null;
+      return [null, null];
     }
   });
 }

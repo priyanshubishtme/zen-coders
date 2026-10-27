@@ -47,12 +47,12 @@ export function fakeScanner(behaviour = async () => fakeRaw()) {
   const calls = [];
   return {
     calls,
-    async scan(input, options, { onStage }) {
+    async scan(input, options, { onStage } = {}) {
       const stages = [];
       calls.push({ input, options, stages });
       for (const s of ['loading', 'rendering', 'checking']) {
         stages.push(s);
-        onStage(s);
+        onStage?.(s);
       }
       return behaviour(input);
     },

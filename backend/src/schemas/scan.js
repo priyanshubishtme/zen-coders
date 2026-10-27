@@ -33,6 +33,16 @@ export const HeadingOutlineItem = z.object({
   level: z.number().int().min(1).max(9),
   text: z.string(),
   target: z.array(z.string()),
+  /** Computed look, so a heading-level fix can keep it. */
+  style: z
+    .object({
+      fontSize: z.string(),
+      fontWeight: z.string(),
+      marginTop: z.string(),
+      marginBottom: z.string(),
+    })
+    .nullable()
+    .optional(),
 });
 
 export const Scan = z.object({
@@ -75,7 +85,7 @@ export const Scan = z.object({
     normalizeMs: ms.nullable(),
     totalMs: ms.nullable(),
   }),
-  /** Not computed in Phase 1. */
+  /** Formula version 1; null only when no in-scope rule applied (shown as N/A). */
   score: Score.nullable(),
   tokenUsage: ScanTokenSummary,
   error: z.object({ code: z.string(), message: z.string() }).nullable(),

@@ -34,11 +34,18 @@ function mapNavigationError(err, guard) {
   return new AppError('FETCH_FAILED', 'The page could not be loaded.');
 }
 
+/** Attach our element id and any verification marker (data-afx-v) to every axe node. */
 async function annotate(page, results) {
   const targets = results.flatMap((r) => r.nodes.map((n) => n.target));
   const ids = await resolveAxeTargets(page, targets);
   let i = 0;
-  return results.map((r) => ({ ...r, nodes: r.nodes.map((n) => ({ ...n, afxId: ids[i++] })) }));
+  return results.map((r) => ({
+    ...r,
+    nodes: r.nodes.map((n) => {
+      const [afxId, marker] = ids[i++] ?? [null, null];
+      return { ...n, afxId, marker };
+    }),
+  }));
 }
 
 /**
@@ -57,10 +64,12 @@ export function createScanner(config, deps = {}) {
   /**
    * @param {{ type: 'html', html: string } | { type: 'url', url: string }} input
    * @param {{ includeAAA: boolean, includeBestPractice: boolean }} options
-   * @param {{ onStage?: (stage: ScanStage) => void }} [hooks]
+   * @param {{ onStage?: (stage: ScanStage) => void,
+   *   replay?: { resources: Map<string, object>, mainHtml?: string } }} [hooks]
+   *   replay: never touch the network; serve the page from captured responses (verification).
    * @returns {Promise<RawScanResult>}
    */
-  async function scan(input, options, { onStage = () => {} } = {}) {
+  async function scan(input, options, { onStage = () => {}, replay } = {}) {
     return pool.withContext(
       async (context) => {
         const page = await context.newPage();
@@ -72,6 +81,7 @@ export function createScanner(config, deps = {}) {
           maxBytes: config.MAX_RESPONSE_BYTES,
           timeoutMs: config.SUBREQUEST_TIMEOUT_MS,
           isMainDocument: (req) => req.isNavigationRequest() && req.frame() === page.mainFrame(),
+          replay,
         });
         page.on('dialog', (d) => d.dismiss().catch(() => {}));
         // Only popups opened by the scanned page; AxeBuilder opens its own helper page.
@@ -124,8 +134,13 @@ export function createScanner(config, deps = {}) {
           axeVersion: axe.testEngine.version,
           violations,
           incomplete,
+          passes: axe.passes.map((r) => ({ id: r.id, tags: r.tags, count: r.nodes.length })),
           findings: checks.findings,
           headingOutline: checks.outline,
+          /** The text repairs patch: pasted HTML, or the HTML the server sent. */
+          source: input.type === 'html' ? input.html : guard.mainBody,
+          /** Responses captured for offline replay during verification. */
+          resources: guard.captured,
           page: {
             finalUrl: input.type === 'url' ? page.url() : null,
             title: (await page.title()) || null,

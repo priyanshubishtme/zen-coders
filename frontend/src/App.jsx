@@ -54,8 +54,8 @@ export default function App({ pollMs } = {}) {
       <main id="main" className="mx-auto max-w-5xl px-4 py-8">
         <h1 className="text-2xl font-semibold tracking-tight">Find accessibility issues</h1>
         <p className="mt-2 max-w-prose text-muted-foreground">
-          Paste HTML or enter a URL. AccessFix renders it in an isolated browser and checks it
-          against WCAG 2.2 A and AA, explaining every issue in plain language.
+          Paste HTML or enter a URL. AccessFix renders it in an isolated browser, checks it against
+          WCAG 2.2 A and AA, and suggests verified source fixes.
         </p>
 
         <div className="mt-6 space-y-6">
@@ -81,7 +81,7 @@ export default function App({ pollMs } = {}) {
           )}
 
           {scan.phase === 'done' && scan.scan.status === 'completed' && (
-            <Results scan={scan.scan} />
+            <Results scan={scan.scan} health={health} />
           )}
         </div>
       </main>

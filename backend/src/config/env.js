@@ -35,11 +35,15 @@ const EnvSchema = z.object({
   LLM_API_KEY: z.string().default(''),
   LLM_MODEL_CHEAP: z.string().default(''),
   LLM_MODEL_VISION: z.string().default(''),
+  LLM_MODEL_STRONG: z.string().default(''),
   LLM_PRICE_INPUT_PER_M: z.coerce.number().nonnegative().default(0),
   LLM_PRICE_OUTPUT_PER_M: z.coerce.number().nonnegative().default(0),
   LLM_TOKEN_BUDGET_PER_SCAN: z.coerce.number().int().nonnegative().default(8000),
+  LLM_TOKEN_BUDGET_PER_IP_DAY: z.coerce.number().int().nonnegative().default(100_000),
   LLM_RPM: z.coerce.number().int().positive().default(30),
   LLM_TPM: z.coerce.number().int().positive().default(60_000),
+  /** auto = on in production (Render/Vercel). Needed so per-IP budgets see the real client. */
+  TRUST_PROXY: bool,
 
   STORE: z.enum(['memory', 'mongo']).default('memory'),
   MONGODB_URI: z.string().default(''),
@@ -62,8 +66,10 @@ export function loadConfig(source = process.env) {
     const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
     throw new Error(`Invalid configuration: ${issues}`);
   }
-  if (parsed.data.ALLOW_PRIVATE_URLS && parsed.data.NODE_ENV === 'production') {
+  const data = parsed.data;
+  if (!('TRUST_PROXY' in cleaned) && data.NODE_ENV === 'production') data.TRUST_PROXY = true;
+  if (data.ALLOW_PRIVATE_URLS && data.NODE_ENV === 'production') {
     throw new Error('Invalid configuration: ALLOW_PRIVATE_URLS cannot be enabled in production.');
   }
-  return Object.freeze(parsed.data);
+  return Object.freeze(data);
 }

@@ -31,17 +31,19 @@ export function createApp(config, overrides = {}) {
   const logger = overrides.logger ?? createLogger(config);
   const scanner = overrides.scanner ?? createScanner(config, { logger, lookup: overrides.lookup });
   const repo = overrides.repo ?? createRepository(config, logger);
-  const llm = overrides.llm ?? createLlmProvider(config);
+  const llm = overrides.llm ?? createLlmProvider(config, { logger });
   const orchestrator = createOrchestrator({
     scanner,
     repo,
     config,
     logger,
     lookup: overrides.lookup,
+    llm,
   });
 
   const app = express();
   app.disable('x-powered-by');
+  if (config.TRUST_PROXY) app.set('trust proxy', 1);
   app.use(helmet());
   app.use(
     cors({

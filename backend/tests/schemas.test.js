@@ -50,8 +50,11 @@ describe('contracts', () => {
       confidence: 'low',
       patch: null,
       rationale: 'Captions need a human transcript.',
+      notes: ['Write captions for every spoken word.'],
       needsHumanInput: true,
+      placeholder: null,
       tokenUsage: null,
+      verification: null,
       createdAt: new Date().toISOString(),
     };
     expect(Repair.safeParse(repair).success).toBe(true);
@@ -69,6 +72,7 @@ describe('contracts', () => {
       weightedFailures: 0,
       weightedTotal: 0,
       byImpact: { critical: zero, serious: zero, moderate: zero, minor: zero },
+      rules: [],
       manualReviewCount: 0,
       advisoryCount: 0,
       engine: { axeVersion: '4.14.0' },

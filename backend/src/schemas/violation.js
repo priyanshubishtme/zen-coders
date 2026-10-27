@@ -34,6 +34,18 @@ export const Violation = z.object({
     target: z.array(z.string().min(1)).min(1),
     html: z.string().max(2000),
     failureSummary: z.string().nullable(),
+    /** Measured colours for contrast results; null for every other rule. */
+    evidence: z
+      .object({
+        fgColor: z.string(),
+        bgColor: z.string().nullable(),
+        contrastRatio: z.number().nullable(),
+        expectedContrastRatio: z.string().nullable(),
+        fontSize: z.string().nullable(),
+        fontWeight: z.string().nullable(),
+      })
+      .nullable()
+      .optional(),
   }),
   /** ruleId + hash of the normalized element pattern; used for dedupe and LLM caching. */
   signature: z.string(),

@@ -5,9 +5,9 @@ preview, and see a **verified** before/after score. Fix-first, no overlays, work
 
 Hackathon problem statement PS 11: "Web Accessibility Auditor + Fix-Suggester".
 
-> **Status: Phase 1 (scan pipeline).** Paste HTML or scan a URL, get WCAG 2.2 A/AA issues in plain
-> language with severity, WCAG references and "who it affects". Repairs, verification and the
-> score arrive in Phase 2 (those endpoints return `501` for now). Start with [`docs/`](docs/README.md).
+> **Status: Phase 2 (repair + verify + score).** Paste HTML or scan a URL, get WCAG 2.2 A/AA issues,
+> apply deterministic source fixes to an isolated copy, re-scan, and watch the score move. Works
+> with the LLM off. Start with [`docs/`](docs/README.md).
 
 ## Quick start
 
@@ -21,7 +21,9 @@ npm run dev                 # API on :4000, web on :5173
 ```
 
 Open http://localhost:5173. The header should say **"API online"**. Click **Try the broken
-sample** to scan `samples/broken-sample.html` (about 1.5 s).
+sample** to scan `samples/broken-sample.html` (about 1.5 s). Then **Suggest fixes** and
+**Apply verified fixes** — the score should rise, with placeholders (like image alt text)
+left for you to fill in.
 
 To scan a local site (for example the AccessFix UI itself), start the API with
 `ALLOW_PRIVATE_URLS=true` in `.env`. That is dev-only: the server refuses it in production and

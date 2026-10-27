@@ -2,8 +2,8 @@
 
 ## What
 
-AccessFix is a web accessibility auditor that ends in fixes, not reports. You paste HTML (and,
-from Phase 2, a URL). AccessFix renders it in an isolated headless browser, detects WCAG 2.2 AA
+AccessFix is a web accessibility auditor that ends in fixes, not reports. You paste HTML or a
+URL. AccessFix renders it in an isolated headless browser, detects WCAG 2.2 AA
 failures with axe-core plus our own deterministic checks, explains each one in plain language
 with a severity, and generates a copy-pasteable source patch. You choose which patches to accept;
 AccessFix applies them to an isolated copy, re-scans, and marks each fix **verified** only if the

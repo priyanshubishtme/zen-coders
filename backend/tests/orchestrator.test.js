@@ -31,7 +31,8 @@ describe('orchestrator', () => {
     expect(scan).toMatchObject({ status: 'completed', stage: 'done', error: null });
     expect(scan.timings.totalMs).toBeGreaterThanOrEqual(0);
     expect(scan.timings.queueMs).not.toBeNull();
-    expect(scan.headingOutline).toEqual([{ level: 1, text: 'Hi', target: ['h1'] }]);
+    expect(scan.headingOutline).toEqual([{ level: 1, text: 'Hi', target: ['h1'], style: null }]);
+    expect(scan.score).toMatchObject({ value: 0, weightedFailures: 10, weightedTotal: 10 });
   });
 
   it('stores the same input hash for the same input', async () => {

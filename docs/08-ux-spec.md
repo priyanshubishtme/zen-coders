@@ -10,7 +10,8 @@
    criterion and how many elements it affects.
 4. **Fix.** "Suggest fixes" generates one repair per issue. Each shows a strategy badge
    (Rule-based, AI draft, Template, Manual), its confidence, and a before/after diff with a Copy
-   button. Placeholders and AI drafts can be edited inline.
+   button. Placeholders and AI drafts can be edited inline. LLM drafts show **AI draft, needs
+   review** and must be Accepted before Apply; Reject restores the TODO: template.
 5. **Verify.** Select fixes (all deterministic fixes are pre-selected) and press "Apply and
    re-scan". Each fix is marked Verified, Still failing or Regressed.
 6. **Take it home.** The before/after score, the patched HTML (copy or download), the
@@ -20,9 +21,8 @@
 
 | Screen    | Route               | Phase | Purpose                                                          |
 | --------- | ------------------- | ----- | ---------------------------------------------------------------- |
-| Workspace | `/`                 | 1     | Paste, scan, issues, fixes, verify: the whole loop on one screen |
+| Workspace | `/`                 | 1     | Paste, scan, issues, fixes, verify. Phase 3 adds the Efficiency panel (tokens used / saved / cache hits). `GET /usage` is API-only; there is no `/usage` page. |
 | Report    | `/scans/:id/report` | 5     | Read-only, shareable, printable                                  |
-| Usage     | `/usage`            | 3     | Tokens, cost, saved vs naive, deterministic share                |
 | History   | `/history`          | 4     | Past scans, score trend (Recharts)                               |
 | Business  | `/business`         | 5     | Content from doc 02                                              |
 

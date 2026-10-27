@@ -10,10 +10,14 @@ export function createScansController(orchestrator) {
       res.json(await orchestrator.getScan(req.valid.params.id));
     },
     async repairs(req, res) {
-      res.json(await orchestrator.proposeRepairs(req.valid.params.id, req.valid.body));
+      res.json(await orchestrator.proposeRepairs(req.valid.params.id, req.valid.body, { ip: req.ip }));
     },
     async verify(req, res) {
       res.json(await orchestrator.verify(req.valid.params.id, req.valid.body));
+    },
+    async patched(req, res) {
+      const html = await orchestrator.getPatchedHtml(req.valid.params.id);
+      res.type('text/html').attachment(`accessfix-${req.valid.params.id}.html`).send(html);
     },
     async report(req, res) {
       const { format } = req.valid.query;

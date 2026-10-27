@@ -22,9 +22,21 @@ export const CreateRepairsBody = z
   })
   .default({ useLlm: true });
 
+const count = z.number().int().nonnegative();
+
 export const CreateRepairsResponse = z.object({
   scanId: Id,
+  /** One per violation and advisory item, each already verified by an offline re-scan. */
   repairs: z.array(Repair),
+  summary: z.object({
+    verified: count,
+    failed: count,
+    regressed: count,
+    notApplied: count,
+    needsInput: count,
+    manual: count,
+    scansRun: count,
+  }),
   tokenUsage: ScanTokenSummary,
 });
 
@@ -33,11 +45,15 @@ export const PLACEHOLDER_MARKER = 'TODO:';
 
 export const VerifyBody = z.object({
   repairIds: z.array(Id).min(1).max(500),
-  /** User-edited patch text, e.g. reviewed alt text replacing a placeholder or AI draft. */
+  /** Text that replaces a template repair's placeholder (e.g. reviewed alt text). */
   edits: z
-    .array(z.object({ repairId: Id, after: z.string().min(1).max(5000) }))
+    .array(z.object({ repairId: Id, text: z.string().trim().min(1).max(500) }))
     .max(500)
     .optional(),
+  /** LLM drafts are applied only when listed here. */
+  acceptedRepairIds: z.array(Id).max(500).optional(),
+  /** Restore these LLM drafts to their TODO: templates. */
+  rejectedRepairIds: z.array(Id).max(500).optional(),
 });
 
 export const ReportQuery = z.object({

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Impact } from './common.js';
 
 const count = z.number().int().nonnegative();
 const bucket = z.object({ fail: count, pass: count });
@@ -15,6 +16,10 @@ export const Score = z.object({
   weightedFailures: count,
   weightedTotal: count,
   byImpact: z.object({ critical: bucket, serious: bucket, moderate: bucket, minor: bucket }),
+  /** Every scored rule, so the UI can show the formula with real numbers. */
+  rules: z.array(
+    z.object({ ruleId: z.string(), impact: Impact, weight: count, pass: count, fail: count }),
+  ),
   /** Kept out of the score on purpose. */
   manualReviewCount: count,
   advisoryCount: count,

@@ -22,6 +22,7 @@ export function headingOutline(h) {
     ruleId,
     impact,
     afxId: h.idOf(el),
+    marker: el.getAttribute('data-afx-v'),
     target: h.target(el),
     html: h.snippet(el),
     failureSummary: summary,
@@ -85,11 +86,21 @@ export function headingOutline(h) {
 
   return {
     findings,
-    outline: outline.map((x) => ({
-      level: x.level,
-      text: x.text,
-      afxId: h.idOf(x.el),
-      target: h.target(x.el),
-    })),
+    outline: outline.map((x) => {
+      const cs = getComputedStyle(x.el);
+      return {
+        level: x.level,
+        text: x.text,
+        afxId: h.idOf(x.el),
+        target: h.target(x.el),
+        // Lets a heading-level fix keep the heading's look.
+        style: {
+          fontSize: cs.fontSize,
+          fontWeight: cs.fontWeight,
+          marginTop: cs.marginTop,
+          marginBottom: cs.marginBottom,
+        },
+      };
+    }),
   };
 }

@@ -13,10 +13,11 @@ Every error uses the envelope in [03-architecture.md#error-model](03-architectur
 | `GET`  | `/health`            | Liveness, dependency status, limits            | `200 HealthResponse`        | Live                              |
 | `POST` | `/scans`             | Validate input and start a scan (HTML or URL)  | `202 ScanAccepted`          | Live (Phase 1)                    |
 | `GET`  | `/scans/:id`         | Poll a scan: `stage`, then results             | `200 Scan`                  | Live (Phase 1)                    |
-| `GET`  | `/usage`             | Scan count and token usage since process start | `200 UsageResponse`         | Live (tokens are 0 until Phase 3) |
-| `POST` | `/scans/:id/repairs` | Propose one Repair per selected violation      | `200 CreateRepairsResponse` | 501 until Phase 2                 |
-| `POST` | `/scans/:id/verify`  | Apply repairs to a copy, re-scan, compare      | `200 VerificationResult`    | 501 until Phase 2                 |
-| `GET`  | `/scans/:id/report`  | Report as `json`, `md` or `html`               | `200`                       | 501 until Phase 2/5               |
+| `GET`  | `/usage`             | Scan count and token usage since process start | `200 UsageResponse`         | Live (process totals; no UI page) |
+| `POST` | `/scans/:id/repairs` | Propose one Repair per selected violation      | `200 CreateRepairsResponse` | Live (Phase 2)                    |
+| `POST` | `/scans/:id/verify`  | Apply repairs to a copy, re-scan, compare      | `200 VerificationResult`    | Live (Phase 2)                    |
+| `GET`  | `/scans/:id/patched.html` | Latest patched source (attachment)        | `200 text/html`             | Live (Phase 2)                    |
+| `GET`  | `/scans/:id/report`  | Report as `json`, `md` or `html`               | `200`                       | 501 until Phase 5                 |
 
 Until a route is implemented it returns `501 NOT_IMPLEMENTED`. Validation still runs first, so
 clients can integrate against the real error behaviour today.
@@ -65,14 +66,19 @@ CreateRepairsBody = z
 // POST /scans/:id/verify
 VerifyBody = z.object({
   repairIds: z.array(Id).min(1).max(500),
-  // Replace a patch's "after" text, e.g. reviewed alt text. Re-diffed server-side.
+  // Replace a template repair's PLACEHOLDER_MARKER text (e.g. reviewed alt text).
   edits: z
-    .array(z.object({ repairId: Id, after: z.string().min(1).max(5000) }))
+    .array(z.object({ repairId: Id, text: z.string().trim().min(1).max(500) }))
     .max(500)
     .optional(),
+  // LLM drafts are applied only when listed here. The server rejects unaccepted ones.
+  acceptedRepairIds: z.array(Id).max(500).optional(),
+  // Restore these LLM drafts to their TODO: templates.
+  rejectedRepairIds: z.array(Id).max(500).optional(),
 });
 // A patch whose final text still contains PLACEHOLDER_MARKER ("TODO:") is not applied:
 // outcome "not-applied", detail "Fill in the placeholder first". Placeholders never count as fixes.
+// An LLM repair that is not in acceptedRepairIds is not-applied: "Accept the AI draft first".
 
 // GET /scans/:id/report
 ReportQuery = z.object({ format: z.enum(['json', 'md', 'html']).default('json') });
@@ -137,6 +143,7 @@ Patch = z.object({
   before: z.string(),
   after: z.string(),
   diff: z.string(), // unified diff, copy-pasteable
+  copy: z.string(), // one-line explanation + diff, for "Copy fix"
 });
 
 Repair = z.object({
@@ -144,12 +151,30 @@ Repair = z.object({
   violationId: Id,
   ruleId: z.string(),
   strategy: z.enum(['deterministic', 'llm', 'template', 'manual']),
-  status: z.enum(['proposed', 'verified', 'failed', 'manual-review']),
+  status: z.enum([
+    'proposed',
+    'verified',
+    'failed',
+    'regressed',
+    'not-applied',
+    'needs-input',
+    'manual-review',
+  ]),
   confidence: z.enum(['high', 'medium', 'low']),
   patch: Patch.nullable(), // null only when strategy = manual
   rationale: z.string(),
+  notes: z.array(z.string()),
   needsHumanInput: z.boolean(), // placeholder or AI draft to review
+  placeholder: z.string().nullable(),
+  draft: z.string().nullable().optional(), // LLM (or user-edited) words; null for unfilled templates
+  accepted: z.boolean().optional().default(false), // LLM drafts stay false until the user accepts
   tokenUsage: TokenUsage.nullable(), // null for deterministic/template/manual
+  verification: z
+    .object({
+      outcome: z.enum(['resolved', 'still-failing', 'regressed', 'not-applied']),
+      detail: z.string().nullable(),
+    })
+    .nullable(),
   createdAt: z.iso.datetime(),
 });
 ```
@@ -168,10 +193,14 @@ VerificationResult = z.object({
       detail: z.string().nullable(),
     }),
   ),
-  regressions: z.array(Violation), // new violations caused by the patches
+  resolved: z.array(Violation),
+  remaining: z.array(Violation),
+  regressions: z.array(Violation), // new violations caused by the patches; always shown
+  manualReview: z.array(Violation),
   before: Score,
   after: Score,
   patchedHtml: z.string(),
+  scansRun: z.number().int().nonnegative(),
   durationMs: z.number().int().nonnegative(),
   verifiedAt: z.iso.datetime(),
 });
@@ -187,6 +216,7 @@ Score = z.object({
   rulesChecked: count, elementsChecked: count, failingElements: count,
   weightedFailures: count, weightedTotal: count,
   byImpact: { critical: {fail, pass}, serious: {...}, moderate: {...}, minor: {...} },
+  rules: z.array(z.object({ ruleId, impact, weight, pass, fail })),
   manualReviewCount: count,                            // not in the value
   advisoryCount: count,                                // not in the value
   engine: z.object({ axeVersion: z.string() }),
@@ -273,6 +303,15 @@ HealthResponse = z.object({
 CreateRepairsResponse = z.object({
   scanId: Id,
   repairs: z.array(Repair),
+  summary: z.object({
+    verified: count,
+    failed: count,
+    regressed: count,
+    notApplied: count,
+    needsInput: count,
+    manual: count,
+    scansRun: count,
+  }),
   tokenUsage: ScanTokenSummary,
 });
 
@@ -346,7 +385,7 @@ Polling `GET /scans/s_Xk2…` until `status` is `completed` (about 1.5 s for
   ],
   "network": { "requests": 0, "blocked": 0, "blockedSamples": [] },
   "timings": { "loadMs": 13, "renderMs": 498, "axeMs": 721, "checksMs": 6, "totalMs": 1407 },
-  "score": null
+  "score": { "value": 62, "formulaVersion": 1, "standard": "WCAG 2.2 AA" }
 }
 ```
 

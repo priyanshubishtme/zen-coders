@@ -17,7 +17,29 @@ function wcagFromTags(tags) {
   return { criteria, level, refs: criteria.map(criterionRef) };
 }
 
+/** A rule counts as WCAG (scored) when axe tags it with both a level and a success criterion. */
+export function isWcagRule(tags) {
+  const w = wcagFromTags(tags);
+  return w.criteria.length > 0 && w.level !== null;
+}
+
 const truncate = (s) => (s.length > MAX_SNIPPET ? `${s.slice(0, MAX_SNIPPET - 1)}…` : s);
+
+const CONTRAST_CHECKS = new Set(['color-contrast', 'color-contrast-enhanced']);
+
+/** Measured colours behind a contrast result; repairs and the UI both use them. */
+function evidenceOf(node) {
+  const data = [...(node.any ?? []), ...(node.all ?? [])].find((c) => CONTRAST_CHECKS.has(c.id))?.data;
+  if (!data?.fgColor) return null;
+  return {
+    fgColor: data.fgColor,
+    bgColor: data.bgColor ?? null,
+    contrastRatio: typeof data.contrastRatio === 'number' ? data.contrastRatio : null,
+    expectedContrastRatio: data.expectedContrastRatio ?? null,
+    fontSize: data.fontSize ?? null,
+    fontWeight: data.fontWeight ?? null,
+  };
+}
 
 function build({
   inputHash,
@@ -48,6 +70,7 @@ function build({
       target: node.target.map((t) => (Array.isArray(t) ? t.join(' >>> ') : String(t))),
       html: truncate(node.html ?? ''),
       failureSummary: node.failureSummary ?? null,
+      evidence: evidenceOf(node),
     },
     signature: patternSignature(ruleId, node.html ?? ''),
     status: outcome === 'needs-review' ? 'manual-review' : 'open',
@@ -57,7 +80,7 @@ function build({
 function fromAxe(results, outcome, inputHash) {
   return results.flatMap((rule) => {
     const wcag = wcagFromTags(rule.tags);
-    const category = wcag.criteria.length && wcag.level ? 'wcag' : 'best-practice';
+    const category = isWcagRule(rule.tags) ? 'wcag' : 'best-practice';
     const text = describeRule(rule.id, rule);
     return rule.nodes.map((node) => ({
       afxId: node.afxId ?? null,

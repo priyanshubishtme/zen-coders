@@ -9,7 +9,11 @@ export function createHealthController({ scanner, repo, llm, config, version }) 
         status: browser === 'up' ? 'ok' : 'degraded',
         version,
         uptimeSec: Math.round((Date.now() - startedAt) / 1000),
-        checks: { browser, store: repo.kind, llm: llm.enabled ? 'on' : 'off' },
+        checks: {
+          browser,
+          store: repo.kind,
+          llm: typeof llm.status === 'function' ? llm.status() : llm.enabled ? 'on' : 'off',
+        },
         limits: {
           maxHtmlBytes: config.MAX_HTML_BYTES,
           privateUrlsAllowed: config.ALLOW_PRIVATE_URLS,

@@ -13,6 +13,8 @@ const TITLES = {
   SCANNER_BUSY: 'The scanner is busy',
   BROWSER_UNAVAILABLE: 'The scanner is offline',
   VALIDATION_ERROR: 'Please check your input',
+  SOURCE_EXPIRED: 'The scanned page has expired',
+  SCAN_NOT_READY: 'The scan has not finished yet',
   NETWORK: 'Cannot reach the AccessFix API',
 };
 
@@ -20,6 +22,7 @@ const HINTS = {
   SCAN_TIMEOUT: 'Try a smaller page, or paste just the part you want to check.',
   NETWORK: 'Check that the API is running on port 4000.',
   FETCH_FAILED: 'Check the address, or paste the page HTML instead.',
+  SOURCE_EXPIRED: 'Scan the page again to get fixes. The original source is kept for one hour.',
 };
 
 /**

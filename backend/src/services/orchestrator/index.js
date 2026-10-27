@@ -1,8 +1,12 @@
 import { nanoid } from 'nanoid';
+import { createSourceCache } from '../../repositories/sourceCache.js';
 import { AppError, NotImplementedError } from '../../utils/errors.js';
 import { sha256 } from '../../utils/hash.js';
 import { resolveSafeUrl } from '../../utils/urlSafety.js';
 import { normalize } from '../scanner/normalize.js';
+import { computeScore } from '../scorer/index.js';
+import { createVerifier } from '../verifier/index.js';
+import { createRepairFlow } from './repairFlow.js';
 
 /** At least 3 control characters making up over 1% of the input means this is not HTML text. */
 const MAX_CONTROL_RATIO = 0.01;
@@ -49,10 +53,21 @@ export function emptyTokenSummary(budget) {
  * never call each other directly.
  *
  * @param {{ scanner: object, repo: import('../../repositories/scanRepository.js').ScanRepository,
- *   config: object, logger: object, lookup?: Function }} deps
+ *   config: object, logger: object, lookup?: Function, verifier?: object, sourceCache?: object,
+ *   llm?: object }} deps
  */
-export function createOrchestrator({ scanner, repo, config, logger, lookup }) {
+export function createOrchestrator({ scanner, repo, config, logger, lookup, verifier, sourceCache, llm }) {
   const running = new Set();
+  const sources = sourceCache ?? createSourceCache();
+  const repairFlow = createRepairFlow({
+    repo,
+    sourceCache: sources,
+    verifier: verifier ?? createVerifier({ scanner }),
+    logger,
+    emptyTokens: () => emptyTokenSummary(config.LLM_TOKEN_BUDGET_PER_SCAN),
+    llm,
+    config,
+  });
 
   async function runScan({ id, input, options, createdAtMs, inputHash }) {
     const log = logger.child({ scanId: id });
@@ -79,17 +94,23 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup }) {
       stageUpdate('normalizing');
       const t = Date.now();
       const buckets = normalize(raw, { inputHash });
+      const score = computeScore(raw, options);
       timings.normalizeMs = Date.now() - t;
       timings.totalMs = Date.now() - createdAtMs;
 
+      if (raw.source) {
+        sources.set(id, { source: raw.source, resources: raw.resources, mainUrl: raw.page.finalUrl });
+      }
       await repo.updateScan(id, {
         status: 'completed',
         stage: 'done',
         ...buckets,
-        headingOutline: raw.headingOutline.map(({ level, text, target }) => ({
+        score,
+        headingOutline: raw.headingOutline.map(({ level, text, target, style }) => ({
           level,
           text,
           target: target.map((x) => (Array.isArray(x) ? x.join(' >>> ') : x)),
+          style: style ?? null,
         })),
         page: raw.page,
         network: raw.network,
@@ -196,21 +217,23 @@ export function createOrchestrator({ scanner, repo, config, logger, lookup }) {
 
     async getUsage() {
       const summary = await repo.usageSummary();
+      const stats = llm?.limiterStats?.() ?? {};
       return {
         since: summary.since,
         scans: summary.scans,
         verifiedFixes: 0,
-        tokens: emptyTokenSummary(config.LLM_TOKEN_BUDGET_PER_SCAN),
-        rateLimiter: { queued: 0, rpmRemaining: config.LLM_RPM, tpmRemaining: config.LLM_TPM },
+        tokens: llm?.usageRollup?.() ?? emptyTokenSummary(config.LLM_TOKEN_BUDGET_PER_SCAN),
+        rateLimiter: {
+          queued: stats.queued ?? 0,
+          rpmRemaining: stats.rpmRemaining ?? config.LLM_RPM,
+          tpmRemaining: stats.tpmRemaining ?? config.LLM_TPM,
+        },
       };
     },
 
-    proposeRepairs: async () => {
-      throw new NotImplementedError('POST /scans/:id/repairs');
-    },
-    verify: async () => {
-      throw new NotImplementedError('POST /scans/:id/verify');
-    },
+    proposeRepairs: (scanId, body, ctx) => repairFlow.proposeRepairs(scanId, body, ctx),
+    verify: (scanId, body) => repairFlow.verify(scanId, body),
+    getPatchedHtml: (scanId) => repairFlow.getPatchedHtml(scanId),
     getReport: async () => {
       throw new NotImplementedError('GET /scans/:id/report');
     },

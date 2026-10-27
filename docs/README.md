@@ -23,7 +23,7 @@ Start here. Read in order; each doc is short.
 | Repair order | Deterministic rule fixer, then LLM (judgment only, within budget), then template, then "needs manual review".                 |
 | Verification | Apply to a copy, re-run axe; "verified" only if the violation is gone and nothing regressed.                                  |
 | Score        | `100 * (1 - Σ w·fail / Σ w·(pass+fail))`, fixed per-rule weights 10/7/3/1, needs-review excluded, "N/A" when nothing applies. |
-| LLM          | One OpenAI-compatible adapter behind a provider interface. Default `LLM_PROVIDER=none`. Cheap text model + vision model.      |
+| LLM          | One OpenAI-compatible adapter behind a provider interface. Default `LLM_PROVIDER=none`. Cheap / vision / optional strong.    |
 | Store        | Repository interface; in-memory adapter first, MongoDB Atlas in Phase 4. App runs without Mongo.                              |
 | Repo         | npm workspaces, ES modules, Vitest everywhere, ESLint 9 + Prettier + jsx-a11y.                                                |
 | Pricing      | Free / Pro $19 / Team $79 / Enterprise custom. Hypotheses, not validated.                                                     |
@@ -34,8 +34,8 @@ Start here. Read in order; each doc is short.
 | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------ |
 | 0     | Docs, scaffold, contracts                                                                                                                                                               | A new teammate can say what to build, why, and what is out of scope                         | Done   |
 | 1     | Scan pipeline: pasted HTML **and URL** (SSRF-hardened), browser pool, axe + our checks, normalizer, plain-language templates, repository (memory + Mongo stub), scan UI with all states | The broken sample returns the expected violations in under 5 s; hostile input never crashes | Done   |
-| 2     | Repairs (deterministic first), verification by re-scan, score, before/after view                                                                                                        | Verified fixes raise the score with zero regressions, LLM off                               | Next   |
-| 3     | LLM provider, token accounting, cache, batching, rate limiting                                                                                                                          | Tokens per verified fix shown; app still works with LLM off                                 |        |
+| 2     | Repairs (deterministic first), verification by re-scan, score, before/after view                                                                                                        | Verified fixes raise the score with zero regressions, LLM off                               | Done   |
+| 3     | LLM provider, token accounting, cache, batching, rate limiting                                                                                                                          | Tokens per verified fix shown; app still works with LLM off                                 | Done   |
 | 4     | MongoDB adapter, scan history, Recharts trends                                                                                                                                          | Same contract tests pass on both adapters                                                   |        |
 | 5     | Polish, shareable report, `/business` page, demo hardening                                                                                                                              | We pass our own audit with score 100 and zero regressions                                   |        |
 
