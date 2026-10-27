@@ -1,0 +1,55 @@
+import { z } from 'zod';
+
+const bool = z
+  .enum(['true', 'false'])
+  .default('false')
+  .transform((v) => v === 'true');
+
+const EnvSchema = z.object({
+  PORT: z.coerce.number().int().positive().default(4000),
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  CORS_ORIGINS: z.string().default('http://localhost:5173'),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+
+  MAX_HTML_BYTES: z.coerce.number().int().positive().default(512_000),
+  SCAN_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+  RATE_LIMIT_RPM: z.coerce.number().int().positive().default(30),
+  BROWSER_MAX_CONTEXTS: z.coerce.number().int().positive().default(4),
+
+  INCLUDE_AAA: bool,
+
+  LLM_PROVIDER: z.enum(['none', 'openai-compatible', 'mock']).default('none'),
+  LLM_BASE_URL: z.string().default('https://api.openai.com/v1'),
+  LLM_API_KEY: z.string().default(''),
+  LLM_MODEL_CHEAP: z.string().default(''),
+  LLM_MODEL_VISION: z.string().default(''),
+  LLM_PRICE_INPUT_PER_M: z.coerce.number().nonnegative().default(0),
+  LLM_PRICE_OUTPUT_PER_M: z.coerce.number().nonnegative().default(0),
+  LLM_TOKEN_BUDGET_PER_SCAN: z.coerce.number().int().nonnegative().default(8000),
+  LLM_RPM: z.coerce.number().int().positive().default(30),
+  LLM_TPM: z.coerce.number().int().positive().default(60_000),
+
+  STORE: z.enum(['memory', 'mongo']).default('memory'),
+  MONGODB_URI: z.string().default(''),
+});
+
+/** @typedef {z.infer<typeof EnvSchema>} Config */
+
+/**
+ * Parse and freeze configuration. Empty strings count as "unset" so a blank
+ * line in .env falls back to the default instead of failing validation.
+ * @param {Record<string, string | undefined>} source
+ * @returns {Readonly<Config>}
+ */
+export function loadConfig(source = process.env) {
+  const cleaned = Object.fromEntries(
+    Object.entries(source).filter(([, v]) => v !== undefined && v !== ''),
+  );
+  const parsed = EnvSchema.safeParse(cleaned);
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+    throw new Error(`Invalid configuration: ${issues}`);
+  }
+  return Object.freeze(parsed.data);
+}
